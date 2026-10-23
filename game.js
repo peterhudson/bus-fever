@@ -123,6 +123,16 @@
   }
 
   // ---------- Level generation ----------
+  // Every 10th level is a HARD level: the buses are packed into a shape and
+  // the carousel is smaller. u and v run from -1 to 1 across the block.
+  const isHard = (n) => n >= 10 && n % 10 === 0;
+  const SHAPES = [
+    { name: 'ring', fill: 0.62, has: (u, v) => { const r = Math.hypot(u, v); return r > 0.42 && r < 1.08; } },
+    { name: 'plus', fill: 0.62, has: (u, v) => Math.abs(u) < 0.4 || Math.abs(v) < 0.4 },
+    { name: 'diamond', fill: 0.55, has: (u, v) => Math.abs(u) + Math.abs(v) < 1.08 },
+    { name: 'L', fill: 0.6, has: (u, v) => u < -0.15 || v > 0.15 },
+  ];
+
   // Special pieces that show up as levels go on
   const TUNNEL = 22;      // a tunnel is a 2x2-cell block in the lot
   function levelFeatures(n) {
@@ -130,6 +140,7 @@
       mystery: n >= 8 ? Math.min(0.35, 0.1 + (n - 8) * 0.01) : 0,   // share of buses hiding their color
       flipAll: n >= 12 && n % 3 === 0,  // every bus turns around whenever one leaves
       tunnels: n >= 15 && n % 3 !== 0 ? (n >= 30 ? 2 : 1) : 0,  // flip levels have no tunnels
+      shape: isHard(n) ? SHAPES[(n / 10 - 1) % SHAPES.length] : null,
     };
   }
   // Where the next bus out of a tunnel parks: right in front of its mouth
@@ -140,14 +151,20 @@
 
   // Later levels: buses packed tightly on a grid of 12-unit cells, arrows
   // along the grid. A bus is 2 cells wide and 3, 4 or 5 cells long.
-  function packGrid(n, target, rng, nTunnels, tunnels) {
+  function packGrid(n, target, rng, nTunnels, tunnels, shape) {
     const C = 12, ri = (k) => Math.floor(rng() * k);
     // Size the block so the buses fill most of it
-    const area = (target * 8.4) / 0.82, aspect = LW / LH;
+    const area = (target * 8.4) / 0.82 / (shape ? shape.fill : 1), aspect = LW / LH;
     const cols = Math.min(Math.floor(LW / C), Math.round(Math.sqrt(area * aspect)));
     const rows = Math.min(Math.floor(LH / C), Math.round(area / cols));
     const ox = (LW - cols * C) / 2, oy = (LH - rows * C) / 2;
     const used = new Array(cols * rows).fill(false);
+    // Cells outside the level's shape start out taken
+    if (shape) {
+      for (let yy = 0; yy < rows; yy++) for (let xx = 0; xx < cols; xx++) {
+        if (!shape.has(((xx + 0.5) / cols) * 2 - 1, ((yy + 0.5) / rows) * 2 - 1)) used[yy * cols + xx] = true;
+      }
+    }
     const isFree = (gx, gy, w, h) => {
       if (gx < 0 || gy < 0 || gx + w > cols || gy + h > rows) return false;
       for (let yy = gy; yy < gy + h; yy++) for (let xx = gx; xx < gx + w; xx++) if (used[yy * cols + xx]) return false;
@@ -237,7 +254,7 @@
       const L = buildLevel(n, attempt, levelFeatures(n));
       if (L) return L;
     }
-    return buildLevel(n, 0, { mystery: 0, flipAll: false, tunnels: 0 });
+    return buildLevel(n, 0, { mystery: 0, flipAll: false, tunnels: 0, shape: null });
   }
 
   function buildLevel(n, attempt, feats) {
@@ -247,7 +264,7 @@
     const target = packed ? Math.min(8 + n, 50) : 5 + Math.floor(n * 1.15);
     const nc = Math.min(2 + Math.floor((n + 2) / 3), COLORS.length, target);
     const tunnels = [];
-    const buses = packed ? packGrid(n, target, rng, feats.tunnels, tunnels) : [];
+    const buses = packed ? packGrid(n, target, rng, feats.tunnels, tunnels, feats.shape) : [];
     for (let tries = 0; !packed && buses.length < target && tries < 4000; tries++) {
       const cap = rng() < 0.42 ? 16 : n >= 4 && rng() < 0.28 ? 40 : 24;
       const len = BUS_LEN[cap];
@@ -327,7 +344,7 @@
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
   let qPath = [], qLen = 0;
   let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1;
-  const Q_SP = 9, Q_ROW = 11, Q_SCALE = 0.7, RING_SCALE = 0.56, LANE_W = 6.4;
+  const Q_SP = 12, Q_ROW = 30, RING_SCALE = 0.56, LANE_W = 6.4;  // the line moves 4 abreast, Q_SP apart
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -350,11 +367,11 @@
     ringLen = 2 * (ringXR - ringXL) + 2 * Math.PI * ringR;
 
     // Snake-shaped waiting line above it; the front stands by the carousel entrance
-    const m = 16, yb = ringYT - 22;
+    const m = 18, yb = ringYT - 30;
     qPath = [[ringXL, yb]];
     let y = yb, right = true;
     qPath.push([cw - m, y]);
-    while (y - Q_ROW > 8) {
+    while (y - Q_ROW > Q_ROW / 2) {
       y -= Q_ROW;
       qPath.push([right ? cw - m : m, y]);
       right = !right;
@@ -372,6 +389,15 @@
     }
     return null;
   }
+  // Person i in the waiting line, standing in groups of LANES across the path
+  function queueSpot(i) {
+    const s = (Math.floor(i / LANES) + G.shift / LANES) * Q_SP;
+    const p = queuePoint(s), q = queuePoint(s + 1) || p;
+    if (!p) return null;
+    const tx = q.x - p.x, ty = q.y - p.y, l = Math.hypot(tx, ty) || 1;
+    const off = ((i % LANES) - (LANES - 1) / 2) * LANE_W;
+    return { x: p.x - (ty / l) * off, y: p.y + (tx / l) * off };
+  }
   // Point on the carousel, s measured clockwise from the entrance (top left)
   function ringPoint(s) {
     s = ((s % ringLen) + ringLen) % ringLen;
@@ -388,6 +414,13 @@
   // Seats come in rows of LANES across the belt
   const seatBase = (k) => Math.floor(k / LANES) * (ringLen / (G.ring.length / LANES));
   const seatS = (k) => seatBase(k) + G.ringOff;
+  // True for the stretch of the carousel that runs past the bays: the bottom
+  // straight plus the bottom half of each end
+  function nearBays(s) {
+    s = ((s % ringLen) + ringLen) % ringLen;
+    const L1 = ringXR - ringXL, A = Math.PI * ringR;
+    return s > L1 + A / 2 && s < 2 * L1 + A * 1.5;
+  }
   function seatPoint(k) {
     const s = seatS(k), p = ringPoint(s), q = ringPoint(s + 1);
     const tx = q.x - p.x, ty = q.y - p.y, l = Math.hypot(tx, ty) || 1;
@@ -404,7 +437,7 @@
   const bays = () => Math.min(MAX_BAYS, save.bays + G.tempBays);
 
   // The carousel gets smaller as levels go on, which is what makes them harder
-  const ringSeats = (n) => LANES * (n < 5 ? 48 : Math.max(20, 42 - Math.floor(n / 2)));
+  const ringSeats = (n) => LANES * Math.round((n < 5 ? 36 : Math.max(16, 32 - Math.floor(n / 2))) * (isHard(n) ? 0.8 : 1));
 
   function startLevel() {
     const L = genLevel(save.level);
@@ -423,6 +456,7 @@
     revealFree();
     updateHUD();
     introduceNewPieces();
+    if (isHard(save.level) && !G.modal) toast('HARD level! Double coins if you clear it 💪', 2200);
   }
   function makeBus(b, id) {
     return { ...b, id, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0, flipT: 0, emergeT: 0 };
@@ -636,7 +670,8 @@
       G.shift += LANES;
     }
 
-    // Boarding: anyone on the carousel hops onto a parked bus of their color
+    // Boarding: people hop onto a parked bus of their color as they pass in
+    // front of its bay along the bottom of the carousel
     G.boardT -= dt;
     while (G.boardT <= 0) {
       let pick = null;
@@ -645,8 +680,10 @@
         const to = slotPose(b.slot);
         for (let k = 0; k < G.ring.length; k++) {
           if (G.ring[k] !== b.color) continue;
+          if (!nearBays(seatS(k))) continue;
           const p = seatPoint(k);
-          const d = Math.hypot(p.x - to.x, p.y - to.y) + b.arrive * 1000;
+          if (Math.abs(p.x - to.x) > slotW / 2 + slotGap + 4) continue;
+          const d = Math.abs(p.x - to.x) + b.arrive * 1000;
           if (!pick || d < pick.d) pick = { d, k, b, p };
         }
       }
@@ -892,10 +929,10 @@
       drawPerson(p.x, p.y, G.ring[k], RING_SCALE);
     }
     // Waiting line (back of line drawn first)
-    const visible = Math.min(G.queue.length, Math.floor(qLen / Q_SP));
+    const visible = Math.min(G.queue.length, Math.floor(qLen / Q_SP - 1) * LANES);
     for (let i = visible - 1; i >= 0; i--) {
-      const p = queuePoint((i + G.shift) * Q_SP);
-      if (p) drawPerson(p.x, p.y, G.queue[i], Q_SCALE);
+      const p = queueSpot(i);
+      if (p) drawPerson(p.x, p.y, G.queue[i], RING_SCALE);
     }
     if (G.queue.length > visible) {
       const p = qPath[qPath.length - 1];
@@ -957,7 +994,7 @@
     $('#progFill').style.width = pct + '%';
   }
   function updateHUD() {
-    $('#lvl').textContent = 'LEVEL ' + save.level;
+    $('#lvl').innerHTML = 'LEVEL ' + save.level + (isHard(save.level) ? ' <span class="hard">HARD</span>' : '');
     $('#coins').textContent = '🪙 ' + save.coins;
     document.querySelectorAll('.boost[data-k]').forEach((el) => {
       const k = el.dataset.k, n = save.boosters[k];
@@ -1068,7 +1105,7 @@
   });
 
   function showWin() {
-    const reward = 10 + Math.min(40, save.level * 2);
+    const reward = (10 + Math.min(40, save.level * 2)) * (isHard(save.level) ? 2 : 1);
     const bonus = save.level % 5 === 0;
     save.coins += reward;
     if (bonus) for (const k in save.boosters) save.boosters[k]++;

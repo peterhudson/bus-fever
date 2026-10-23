@@ -8,7 +8,7 @@ A no-ads, no-purchases bus parking puzzle for the phone, inspired by the "bus ja
 
 - Tap a bus to drive it the way its arrow points. If another bus is in the way, it bumps and stays put.
 - Buses that get out park in a bay at the station.
-- The waiting line feeds a turning carousel. Anyone riding the carousel hops onto a parked bus of their own color.
+- The waiting line, four abreast, feeds a turning carousel. People riding it hop onto a parked bus of their own color as they pass in front of its bay.
 - Full buses drive away and free their bay. Board every passenger to win.
 - If the carousel is full and nobody on it matches a bus in the bays, you're stuck.
 
@@ -19,6 +19,8 @@ Special pieces show up as you go:
 - **Mystery buses (level 8+)** are grey with a "?" until nothing blocks their way out (or you tap them).
 - **Flip levels (every third level from 12)**: every bus turns around each time a bus leaves the lot.
 - **Tunnels (level 15+)** release a new bus whenever the spot in front of them is clear. The badge shows how many are left inside.
+
+- **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
 
 Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up.
 
