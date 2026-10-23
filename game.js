@@ -11,7 +11,7 @@
   const EXTRA_BAY_PRICE = 100;
   const BUMP_DUR = 0.35, FLY_DUR = 0.4, LEAVE_DUR = 0.7, BOARD_GAP = 0.018;
   const RING_SPEED = 70;  // how fast the carousel turns (px/s)
-  const LANES = 3;        // people standing side by side on the carousel
+  const LANES = 4;        // people come in groups of 4, standing side by side on the carousel
 
   const COLORS = [
     { c: '#ef4444', d: '#b91c1c', l: '#fca5a5' }, // red
@@ -222,7 +222,7 @@
       i = open.findIndex((o) => o.color === open[i].color);
       const s = open[i];
       // Passengers arrive in clumps of one color, sometimes a whole busload
-      const run = rng() < 0.4 ? s.need : 1 + ri(Math.min(s.need, 24));
+      const run = rng() < 0.4 ? s.need : LANES * (1 + ri(Math.min(s.need / LANES, 6)));
       for (let r = 0; r < run; r++) queue.push(s.color);
       s.need -= run;
       if (s.need <= 0) open.splice(i, 1);
@@ -235,7 +235,7 @@
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
   let qPath = [], qLen = 0;
   let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1;
-  const Q_SP = 9, Q_ROW = 11, Q_SCALE = 0.7, RING_SCALE = 0.62, LANE_W = 7.5;
+  const Q_SP = 9, Q_ROW = 11, Q_SCALE = 0.7, RING_SCALE = 0.56, LANE_W = 6.4;
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -312,7 +312,7 @@
   const bays = () => Math.min(MAX_BAYS, save.bays + G.tempBays);
 
   // The carousel gets smaller as levels go on, which is what makes them harder
-  const ringSeats = (n) => LANES * (n < 5 ? 64 : Math.max(27, 56 - Math.floor(n * 0.7)));
+  const ringSeats = (n) => LANES * (n < 5 ? 48 : Math.max(20, 42 - Math.floor(n / 2)));
 
   function startLevel() {
     const L = genLevel(save.level);
@@ -455,16 +455,18 @@
       }
     }
 
-    // Carousel turns; empty seats passing the entrance take the next person in line
-    G.shift = Math.max(0, G.shift - dt * 16);
+    // Carousel turns; an empty row passing the entrance takes the next group of 4
+    G.shift = Math.max(0, G.shift - dt * 40);
     const prevOff = G.ringOff;
     G.ringOff += RING_SPEED * dt;
-    for (let k = 0; k < G.ring.length; k++) {
+    for (let k = 0; k < G.ring.length; k += LANES) {
       const a = Math.floor((seatBase(k) + prevOff) / ringLen), b = Math.floor((seatBase(k) + G.ringOff) / ringLen);
-      if (a !== b && G.ring[k] === null && G.queue.length) {
-        G.ring[k] = G.queue.shift();
-        G.shift += 1;
-      }
+      if (a === b || !G.queue.length) continue;
+      let empty = true;
+      for (let j = 0; j < LANES; j++) if (G.ring[k + j] !== null) empty = false;
+      if (!empty) continue;
+      for (let j = 0; j < LANES && G.queue.length; j++) G.ring[k + j] = G.queue.shift();
+      G.shift += LANES;
     }
 
     // Boarding: anyone on the carousel hops onto a parked bus of their color
@@ -524,7 +526,7 @@
     if (G.checkT > 0) { if (G.stuckT > 0) G.stuckT += dt; return; }
     G.checkT = 0.25;
     const canBoard = G.buses.some((b) => b.state === 'slot' && b.filled < b.cap && G.ring.includes(b.color));
-    const canFeed = G.queue.length > 0 && G.ring.includes(null);
+    const canFeed = G.queue.length > 0 && G.ring.some((c, k) => k % LANES === 0 && G.ring.slice(k, k + LANES).every((x) => x === null));
     let stuck = false;
     if (!canBoard && !canFeed) {
       if (freeSlot() < 0) stuck = true;
@@ -808,8 +810,10 @@
       }
       for (const c of G.ring) if (c !== null && need[c] > 0) need[c]--;
       const win = G.queue.slice(0, 240), front = [], rest = [];
-      for (const c of win) {
-        if (need[c] > 0) { front.push(c); need[c]--; } else rest.push(c);
+      // Move whole groups of 4 so the line stays in groups
+      for (let i = 0; i < win.length; i += LANES) {
+        const g = win.slice(i, i + LANES), c = g[0];
+        if (need[c] >= g.length) { front.push(...g); need[c] -= g.length; } else rest.push(...g);
       }
       if (!front.length) { toast('Nobody in line fits your parked buses yet'); return; }
       const newQ = front.concat(rest, G.queue.slice(240));
