@@ -20,6 +20,8 @@ Special pieces show up as you go:
 - **Flip levels (every third level from 12)**: every bus turns around each time a bus leaves the lot.
 - **Tunnels (level 15+)** release a new bus whenever the spot in front of them is clear. The badge shows how many are left inside.
 
+- **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
+
 Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up.
 
 ## No ads, no pay-to-win

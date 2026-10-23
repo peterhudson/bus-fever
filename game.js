@@ -123,6 +123,16 @@
   }
 
   // ---------- Level generation ----------
+  // Every 10th level is a HARD level: the buses are packed into a shape and
+  // the carousel is smaller. u and v run from -1 to 1 across the block.
+  const isHard = (n) => n >= 10 && n % 10 === 0;
+  const SHAPES = [
+    { name: 'ring', fill: 0.62, has: (u, v) => { const r = Math.hypot(u, v); return r > 0.42 && r < 1.08; } },
+    { name: 'plus', fill: 0.62, has: (u, v) => Math.abs(u) < 0.4 || Math.abs(v) < 0.4 },
+    { name: 'diamond', fill: 0.55, has: (u, v) => Math.abs(u) + Math.abs(v) < 1.08 },
+    { name: 'L', fill: 0.6, has: (u, v) => u < -0.15 || v > 0.15 },
+  ];
+
   // Special pieces that show up as levels go on
   const TUNNEL = 22;      // a tunnel is a 2x2-cell block in the lot
   function levelFeatures(n) {
@@ -130,6 +140,7 @@
       mystery: n >= 8 ? Math.min(0.35, 0.1 + (n - 8) * 0.01) : 0,   // share of buses hiding their color
       flipAll: n >= 12 && n % 3 === 0,  // every bus turns around whenever one leaves
       tunnels: n >= 15 && n % 3 !== 0 ? (n >= 30 ? 2 : 1) : 0,  // flip levels have no tunnels
+      shape: isHard(n) ? SHAPES[(n / 10 - 1) % SHAPES.length] : null,
     };
   }
   // Where the next bus out of a tunnel parks: right in front of its mouth
@@ -140,14 +151,20 @@
 
   // Later levels: buses packed tightly on a grid of 12-unit cells, arrows
   // along the grid. A bus is 2 cells wide and 3, 4 or 5 cells long.
-  function packGrid(n, target, rng, nTunnels, tunnels) {
+  function packGrid(n, target, rng, nTunnels, tunnels, shape) {
     const C = 12, ri = (k) => Math.floor(rng() * k);
     // Size the block so the buses fill most of it
-    const area = (target * 8.4) / 0.82, aspect = LW / LH;
+    const area = (target * 8.4) / 0.82 / (shape ? shape.fill : 1), aspect = LW / LH;
     const cols = Math.min(Math.floor(LW / C), Math.round(Math.sqrt(area * aspect)));
     const rows = Math.min(Math.floor(LH / C), Math.round(area / cols));
     const ox = (LW - cols * C) / 2, oy = (LH - rows * C) / 2;
     const used = new Array(cols * rows).fill(false);
+    // Cells outside the level's shape start out taken
+    if (shape) {
+      for (let yy = 0; yy < rows; yy++) for (let xx = 0; xx < cols; xx++) {
+        if (!shape.has(((xx + 0.5) / cols) * 2 - 1, ((yy + 0.5) / rows) * 2 - 1)) used[yy * cols + xx] = true;
+      }
+    }
     const isFree = (gx, gy, w, h) => {
       if (gx < 0 || gy < 0 || gx + w > cols || gy + h > rows) return false;
       for (let yy = gy; yy < gy + h; yy++) for (let xx = gx; xx < gx + w; xx++) if (used[yy * cols + xx]) return false;
@@ -237,7 +254,7 @@
       const L = buildLevel(n, attempt, levelFeatures(n));
       if (L) return L;
     }
-    return buildLevel(n, 0, { mystery: 0, flipAll: false, tunnels: 0 });
+    return buildLevel(n, 0, { mystery: 0, flipAll: false, tunnels: 0, shape: null });
   }
 
   function buildLevel(n, attempt, feats) {
@@ -247,7 +264,7 @@
     const target = packed ? Math.min(8 + n, 50) : 5 + Math.floor(n * 1.15);
     const nc = Math.min(2 + Math.floor((n + 2) / 3), COLORS.length, target);
     const tunnels = [];
-    const buses = packed ? packGrid(n, target, rng, feats.tunnels, tunnels) : [];
+    const buses = packed ? packGrid(n, target, rng, feats.tunnels, tunnels, feats.shape) : [];
     for (let tries = 0; !packed && buses.length < target && tries < 4000; tries++) {
       const cap = rng() < 0.42 ? 16 : n >= 4 && rng() < 0.28 ? 40 : 24;
       const len = BUS_LEN[cap];
@@ -404,7 +421,7 @@
   const bays = () => Math.min(MAX_BAYS, save.bays + G.tempBays);
 
   // The carousel gets smaller as levels go on, which is what makes them harder
-  const ringSeats = (n) => LANES * (n < 5 ? 48 : Math.max(20, 42 - Math.floor(n / 2)));
+  const ringSeats = (n) => LANES * Math.round((n < 5 ? 48 : Math.max(20, 42 - Math.floor(n / 2))) * (isHard(n) ? 0.8 : 1));
 
   function startLevel() {
     const L = genLevel(save.level);
@@ -423,6 +440,7 @@
     revealFree();
     updateHUD();
     introduceNewPieces();
+    if (isHard(save.level) && !G.modal) toast('HARD level! Double coins if you clear it 💪', 2200);
   }
   function makeBus(b, id) {
     return { ...b, id, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0, flipT: 0, emergeT: 0 };
@@ -957,7 +975,7 @@
     $('#progFill').style.width = pct + '%';
   }
   function updateHUD() {
-    $('#lvl').textContent = 'LEVEL ' + save.level;
+    $('#lvl').innerHTML = 'LEVEL ' + save.level + (isHard(save.level) ? ' <span class="hard">HARD</span>' : '');
     $('#coins').textContent = '🪙 ' + save.coins;
     document.querySelectorAll('.boost[data-k]').forEach((el) => {
       const k = el.dataset.k, n = save.boosters[k];
@@ -1068,7 +1086,7 @@
   });
 
   function showWin() {
-    const reward = 10 + Math.min(40, save.level * 2);
+    const reward = (10 + Math.min(40, save.level * 2)) * (isHard(save.level) ? 2 : 1);
     const bonus = save.level % 5 === 0;
     save.coins += reward;
     if (bonus) for (const k in save.boosters) save.boosters[k]++;
