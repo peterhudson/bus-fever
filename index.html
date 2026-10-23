@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Sarah's Bus Jam</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Bus Jam">
+<meta name="theme-color" content="#e7ecf3">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root {
+    --bg: #e7ecf3;
+    --ink: #1e293b;
+    --blue: #2563eb;
+    --blue-d: #1e40af;
+    --gold: #f59e0b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    overscroll-behavior: none; touch-action: none;
+  }
+  #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(env(safe-area-inset-top) + 6px) 12px 6px;
+  }
+  .round {
+    width: 44px; height: 44px; border-radius: 50%; border: 0; flex: none;
+    background: linear-gradient(#3b82f6, #1d4ed8); color: #fff; font-size: 22px; font-weight: 800;
+    box-shadow: 0 3px 0 #1e3a8a, 0 4px 10px rgba(0,0,0,.2);
+  }
+  .round:active { transform: translateY(2px); box-shadow: 0 1px 0 #1e3a8a; }
+  #title { flex: 1; text-align: center; }
+  #lvl { font-size: 24px; font-weight: 900; letter-spacing: .5px; color: #fff;
+    -webkit-text-stroke: 1.5px #0f172a; paint-order: stroke fill; text-shadow: 0 2px 0 #0f172a; }
+  #sub { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 3px; }
+  #prog { height: 7px; width: 45%; max-width: 160px; background: #cbd5e1; border-radius: 4px; overflow: hidden; }
+  #progFill { height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width .2s; }
+  #coins { font-weight: 800; font-size: 14px; background: #fff; padding: 1px 9px; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+  #game { flex: 1; width: 100%; min-height: 0; display: block; touch-action: none; }
+  footer {
+    display: flex; justify-content: center; gap: 10px;
+    padding: 8px 12px calc(env(safe-area-inset-bottom) + 10px);
+  }
+  .boost {
+    position: relative; width: 70px; height: 70px; border-radius: 50%; border: 0;
+    background: radial-gradient(circle at 50% 35%, #60a5fa, #1d4ed8 70%); color: #fff;
+    box-shadow: 0 4px 0 #1e3a8a, 0 6px 12px rgba(0,0,0,.25);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0;
+  }
+  .boost:active { transform: translateY(3px); box-shadow: 0 1px 0 #1e3a8a; }
+  .boost .ic { font-size: 28px; line-height: 1; }
+  .boost .lbl { font-size: 10px; font-weight: 800; margin-top: 2px; text-shadow: 0 1px 0 rgba(0,0,0,.4); }
+  .boost .cnt {
+    position: absolute; top: -4px; right: -4px; min-width: 26px; height: 26px; border-radius: 13px;
+    background: #22c55e; border: 2px solid #fff; font-size: 14px; display: flex; align-items: center; justify-content: center; padding: 0 5px;
+  }
+  .boost .cnt.zero { background: #f59e0b; }
+  .boost.active { background: radial-gradient(circle at 50% 35%, #fde047, #f59e0b 70%); box-shadow: 0 4px 0 #b45309, 0 0 0 4px #fde68a; }
+  #btnShop { background: radial-gradient(circle at 50% 35%, #fde047, #f59e0b 70%); box-shadow: 0 4px 0 #b45309, 0 6px 12px rgba(0,0,0,.25); }
+  #toast {
+    position: fixed; left: 50%; top: 58%; transform: translate(-50%, -50%); z-index: 5;
+    background: rgba(15,23,42,.85); color: #fff; padding: 10px 16px; border-radius: 14px;
+    font-weight: 700; font-size: 15px; text-align: center; max-width: 80vw;
+    opacity: 0; transition: opacity .25s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+  #modal { position: fixed; inset: 0; z-index: 10; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  #modal[hidden] { display: none; }
+  .card {
+    width: 100%; max-width: 340px; background: #fff; border-radius: 22px; padding: 20px 18px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.3); text-align: center; animation: pop .25s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .card h2 { margin: 0 0 6px; font-size: 26px; font-weight: 900; }
+  .card p { margin: 6px 0 14px; font-size: 15px; color: #475569; line-height: 1.4; }
+  .card .big { font-size: 46px; margin: 4px 0; }
+  .btn {
+    display: block; width: 100%; border: 0; border-radius: 14px; padding: 13px; margin-top: 10px;
+    font-size: 17px; font-weight: 800; color: #fff; background: linear-gradient(#22c55e, #16a34a); box-shadow: 0 3px 0 #15803d;
+  }
+  .btn:active { transform: translateY(2px); box-shadow: none; }
+  .btn.blue { background: linear-gradient(#3b82f6, #1d4ed8); box-shadow: 0 3px 0 #1e3a8a; }
+  .btn.gray { background: linear-gradient(#94a3b8, #64748b); box-shadow: 0 3px 0 #475569; }
+  .btn.gold { background: linear-gradient(#fbbf24, #f59e0b); box-shadow: 0 3px 0 #b45309; }
+  .btn:disabled { opacity: .45; }
+  .shop-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+  .shop-row .ic { font-size: 28px; width: 36px; text-align: center; }
+  .shop-row .txt { flex: 1; font-size: 14px; color: #475569; }
+  .shop-row .txt b { display: block; color: var(--ink); font-size: 16px; }
+  .shop-row button { border: 0; border-radius: 12px; padding: 9px 12px; font-weight: 800; font-size: 15px; color: #fff; background: linear-gradient(#fbbf24, #f59e0b); box-shadow: 0 2px 0 #b45309; white-space: nowrap; }
+  .shop-row button:disabled { opacity: .4; }
+  .coinline { font-weight: 800; font-size: 18px; margin-bottom: 4px; }
+  .howto { text-align: left; font-size: 15px; color: #334155; line-height: 1.45; padding-left: 20px; margin: 8px 0 4px; }
+  .howto li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button class="round" id="btnRestart" aria-label="Restart level">⟳</button>
+    <div id="title">
+      <div id="lvl">LEVEL 1</div>
+      <div id="sub"><div id="prog"><div id="progFill"></div></div><div id="coins">🪙 0</div></div>
+    </div>
+    <button class="round" id="btnMenu" aria-label="Menu">❚❚</button>
+  </header>
+  <canvas id="game"></canvas>
+  <footer>
+    <button class="boost" data-k="shuffle"><span class="ic">🔀</span><span class="lbl">Shuffle</span><b class="cnt">0</b></button>
+    <button class="boost" data-k="sort"><span class="ic">👥</span><span class="lbl">Sort</span><b class="cnt">0</b></button>
+    <button class="boost" data-k="vip"><span class="ic">⭐</span><span class="lbl">VIP</span><b class="cnt">0</b></button>
+    <button class="boost" id="btnShop"><span class="ic">🏪</span><span class="lbl">Shop</span></button>
+  </footer>
+</div>
+<div id="toast"></div>
+<div id="modal" hidden><div class="card" id="card"></div></div>
+<script src="game.js"></script>
+<script>
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
