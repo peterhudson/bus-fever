@@ -327,7 +327,7 @@
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
   let qPath = [], qLen = 0;
   let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1;
-  const Q_SP = 9, Q_ROW = 11, Q_SCALE = 0.7, RING_SCALE = 0.56, LANE_W = 6.4;
+  const Q_SP = 12, Q_ROW = 30, RING_SCALE = 0.56, LANE_W = 6.4;  // the line moves 4 abreast, Q_SP apart
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -350,11 +350,11 @@
     ringLen = 2 * (ringXR - ringXL) + 2 * Math.PI * ringR;
 
     // Snake-shaped waiting line above it; the front stands by the carousel entrance
-    const m = 16, yb = ringYT - 22;
+    const m = 18, yb = ringYT - 30;
     qPath = [[ringXL, yb]];
     let y = yb, right = true;
     qPath.push([cw - m, y]);
-    while (y - Q_ROW > 8) {
+    while (y - Q_ROW > Q_ROW / 2) {
       y -= Q_ROW;
       qPath.push([right ? cw - m : m, y]);
       right = !right;
@@ -372,6 +372,15 @@
     }
     return null;
   }
+  // Person i in the waiting line, standing in groups of LANES across the path
+  function queueSpot(i) {
+    const s = (Math.floor(i / LANES) + G.shift / LANES) * Q_SP;
+    const p = queuePoint(s), q = queuePoint(s + 1) || p;
+    if (!p) return null;
+    const tx = q.x - p.x, ty = q.y - p.y, l = Math.hypot(tx, ty) || 1;
+    const off = ((i % LANES) - (LANES - 1) / 2) * LANE_W;
+    return { x: p.x - (ty / l) * off, y: p.y + (tx / l) * off };
+  }
   // Point on the carousel, s measured clockwise from the entrance (top left)
   function ringPoint(s) {
     s = ((s % ringLen) + ringLen) % ringLen;
@@ -388,6 +397,13 @@
   // Seats come in rows of LANES across the belt
   const seatBase = (k) => Math.floor(k / LANES) * (ringLen / (G.ring.length / LANES));
   const seatS = (k) => seatBase(k) + G.ringOff;
+  // True for the stretch of the carousel that runs past the bays: the bottom
+  // straight plus the bottom half of each end
+  function nearBays(s) {
+    s = ((s % ringLen) + ringLen) % ringLen;
+    const L1 = ringXR - ringXL, A = Math.PI * ringR;
+    return s > L1 + A / 2 && s < 2 * L1 + A * 1.5;
+  }
   function seatPoint(k) {
     const s = seatS(k), p = ringPoint(s), q = ringPoint(s + 1);
     const tx = q.x - p.x, ty = q.y - p.y, l = Math.hypot(tx, ty) || 1;
@@ -404,7 +420,7 @@
   const bays = () => Math.min(MAX_BAYS, save.bays + G.tempBays);
 
   // The carousel gets smaller as levels go on, which is what makes them harder
-  const ringSeats = (n) => LANES * (n < 5 ? 48 : Math.max(20, 42 - Math.floor(n / 2)));
+  const ringSeats = (n) => LANES * (n < 5 ? 36 : Math.max(16, 32 - Math.floor(n / 2)));
 
   function startLevel() {
     const L = genLevel(save.level);
@@ -636,7 +652,8 @@
       G.shift += LANES;
     }
 
-    // Boarding: anyone on the carousel hops onto a parked bus of their color
+    // Boarding: people hop onto a parked bus of their color as they pass in
+    // front of its bay along the bottom of the carousel
     G.boardT -= dt;
     while (G.boardT <= 0) {
       let pick = null;
@@ -645,8 +662,10 @@
         const to = slotPose(b.slot);
         for (let k = 0; k < G.ring.length; k++) {
           if (G.ring[k] !== b.color) continue;
+          if (!nearBays(seatS(k))) continue;
           const p = seatPoint(k);
-          const d = Math.hypot(p.x - to.x, p.y - to.y) + b.arrive * 1000;
+          if (Math.abs(p.x - to.x) > slotW / 2 + slotGap + 4) continue;
+          const d = Math.abs(p.x - to.x) + b.arrive * 1000;
           if (!pick || d < pick.d) pick = { d, k, b, p };
         }
       }
@@ -892,10 +911,10 @@
       drawPerson(p.x, p.y, G.ring[k], RING_SCALE);
     }
     // Waiting line (back of line drawn first)
-    const visible = Math.min(G.queue.length, Math.floor(qLen / Q_SP));
+    const visible = Math.min(G.queue.length, Math.floor(qLen / Q_SP - 1) * LANES);
     for (let i = visible - 1; i >= 0; i--) {
-      const p = queuePoint((i + G.shift) * Q_SP);
-      if (p) drawPerson(p.x, p.y, G.queue[i], Q_SCALE);
+      const p = queueSpot(i);
+      if (p) drawPerson(p.x, p.y, G.queue[i], RING_SCALE);
     }
     if (G.queue.length > visible) {
       const p = qPath[qPath.length - 1];
