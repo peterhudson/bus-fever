@@ -1,5 +1,5 @@
 // Bump VERSION whenever game files change so phones pick up the update.
-const VERSION = 'bus-jam-v5';
+const VERSION = 'bus-jam-v6';
 const FILES = ['./', 'index.html', 'game.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
