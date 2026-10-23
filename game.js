@@ -4,13 +4,14 @@
   // ---------- Constants ----------
   const LW = 330, LH = 290;          // parking lot size in lot units
   const BUS_W = 22;
-  const BUS_LEN = { 4: 34, 6: 44, 10: 58 };
+  const BUS_LEN = { 16: 34, 24: 44, 40: 58 };  // seats -> length
   const MAX_BAYS = 7;
   const BAY_PRICES = { 5: 100, 6: 300, 7: 600 };
   const BOOSTER_PRICE = 50;
   const EXTRA_BAY_PRICE = 100;
-  const BUMP_DUR = 0.35, FLY_DUR = 0.4, LEAVE_DUR = 0.7, BOARD_GAP = 0.06;
+  const BUMP_DUR = 0.35, FLY_DUR = 0.4, LEAVE_DUR = 0.7, BOARD_GAP = 0.018;
   const RING_SPEED = 70;  // how fast the carousel turns (px/s)
+  const LANES = 4;        // people come in groups of 4, standing side by side on the carousel
 
   const COLORS = [
     { c: '#ef4444', d: '#b91c1c', l: '#fca5a5' }, // red
@@ -133,8 +134,8 @@
     const used = new Array(cols * rows).fill(false);
     const buses = [];
     for (let tries = 0; buses.length < target && tries < 12000; tries++) {
-      const cap = rng() < 0.4 ? 4 : rng() < 0.3 ? 10 : 6;
-      const cells = cap === 4 ? 3 : cap === 6 ? 4 : 5;
+      const cap = rng() < 0.4 ? 16 : rng() < 0.3 ? 40 : 24;
+      const cells = cap === 16 ? 3 : cap === 24 ? 4 : 5;
       const horiz = rng() < 0.5;
       const w = horiz ? cells : 2, h = horiz ? 2 : cells;
       // Early buses go near the middle so the block fills from the inside out
@@ -170,7 +171,7 @@
     const nc = Math.min(2 + Math.floor((n + 2) / 3), COLORS.length, target);
     const buses = packed ? packGrid(n, target, rng) : [];
     for (let tries = 0; !packed && buses.length < target && tries < 4000; tries++) {
-      const cap = rng() < 0.42 ? 4 : n >= 4 && rng() < 0.28 ? 10 : 6;
+      const cap = rng() < 0.42 ? 16 : n >= 4 && rng() < 0.28 ? 40 : 24;
       const len = BUS_LEN[cap];
       const k = rng() < 0.6 ? 2 * ri(4) : 2 * ri(4) + 1;
       const ang = (k * Math.PI) / 4;
@@ -221,7 +222,7 @@
       i = open.findIndex((o) => o.color === open[i].color);
       const s = open[i];
       // Passengers arrive in clumps of one color, sometimes a whole busload
-      const run = rng() < 0.4 ? s.need : 1 + ri(Math.min(s.need, 6));
+      const run = rng() < 0.4 ? s.need : LANES * (1 + ri(Math.min(s.need / LANES, 6)));
       for (let r = 0; r < run; r++) queue.push(s.color);
       s.need -= run;
       if (s.need <= 0) open.splice(i, 1);
@@ -234,7 +235,7 @@
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
   let qPath = [], qLen = 0;
   let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1;
-  const Q_SP = 12.5, Q_ROW = 15;
+  const Q_SP = 9, Q_ROW = 11, Q_SCALE = 0.7, RING_SCALE = 0.56, LANE_W = 6.4;
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -249,15 +250,15 @@
     lotY = lotTop + (lotH - LH * ls) / 2;
     slotW = Math.min(44, (cw - 20 - slotGap * 7) / 8);
     slotX0 = (cw - (slotW * 8 + slotGap * 7)) / 2;
-    slotScale = Math.min((slotH - 36) / BUS_LEN[10], (slotW - 8) / BUS_W);
+    slotScale = Math.min((slotH - 36) / BUS_LEN[40], (slotW - 8) / BUS_W);
 
     // Carousel: a stadium-shaped loop just above the bays
-    ringYB = crowdH - 14; ringYT = ringYB - 2 * ringR;
+    ringYB = crowdH - 18; ringYT = ringYB - 2 * ringR;
     ringXL = 16 + ringR; ringXR = cw - 16 - ringR;
     ringLen = 2 * (ringXR - ringXL) + 2 * Math.PI * ringR;
 
     // Snake-shaped waiting line above it; the front stands by the carousel entrance
-    const m = 16, yb = ringYT - 18;
+    const m = 16, yb = ringYT - 22;
     qPath = [[ringXL, yb]];
     let y = yb, right = true;
     qPath.push([cw - m, y]);
@@ -292,8 +293,15 @@
     const a = Math.PI / 2 + s / ringR;
     return { x: ringXL + ringR * Math.cos(a), y: yc + ringR * Math.sin(a) };
   }
-  const ringSp = () => ringLen / G.ring.length;
-  const seatS = (k) => k * ringSp() + G.ringOff;
+  // Seats come in rows of LANES across the belt
+  const seatBase = (k) => Math.floor(k / LANES) * (ringLen / (G.ring.length / LANES));
+  const seatS = (k) => seatBase(k) + G.ringOff;
+  function seatPoint(k) {
+    const s = seatS(k), p = ringPoint(s), q = ringPoint(s + 1);
+    const tx = q.x - p.x, ty = q.y - p.y, l = Math.hypot(tx, ty) || 1;
+    const off = ((k % LANES) - (LANES - 1) / 2) * LANE_W;
+    return { x: p.x - (ty / l) * off, y: p.y + (tx / l) * off };
+  }
 
   function slotRect(i) {
     return { x: slotX0 + i * (slotW + slotGap), y: slotTop + 8, w: slotW, h: slotH - 34 };
@@ -304,7 +312,7 @@
   const bays = () => Math.min(MAX_BAYS, save.bays + G.tempBays);
 
   // The carousel gets smaller as levels go on, which is what makes them harder
-  const ringSeats = (n) => (n < 5 ? 48 : Math.max(20, 42 - Math.floor(n / 2)));
+  const ringSeats = (n) => LANES * (n < 5 ? 48 : Math.max(20, 42 - Math.floor(n / 2)));
 
   function startLevel() {
     const L = genLevel(save.level);
@@ -447,28 +455,30 @@
       }
     }
 
-    // Carousel turns; empty seats passing the entrance take the next person in line
-    G.shift = Math.max(0, G.shift - dt * 16);
+    // Carousel turns; an empty row passing the entrance takes the next group of 4
+    G.shift = Math.max(0, G.shift - dt * 40);
     const prevOff = G.ringOff;
     G.ringOff += RING_SPEED * dt;
-    for (let k = 0; k < G.ring.length; k++) {
-      const sp = ringSp(), a = Math.floor((k * sp + prevOff) / ringLen), b = Math.floor((k * sp + G.ringOff) / ringLen);
-      if (a !== b && G.ring[k] === null && G.queue.length) {
-        G.ring[k] = G.queue.shift();
-        G.shift += 1;
-      }
+    for (let k = 0; k < G.ring.length; k += LANES) {
+      const a = Math.floor((seatBase(k) + prevOff) / ringLen), b = Math.floor((seatBase(k) + G.ringOff) / ringLen);
+      if (a === b || !G.queue.length) continue;
+      let empty = true;
+      for (let j = 0; j < LANES; j++) if (G.ring[k + j] !== null) empty = false;
+      if (!empty) continue;
+      for (let j = 0; j < LANES && G.queue.length; j++) G.ring[k + j] = G.queue.shift();
+      G.shift += LANES;
     }
 
     // Boarding: anyone on the carousel hops onto a parked bus of their color
     G.boardT -= dt;
-    if (G.boardT <= 0) {
+    while (G.boardT <= 0) {
       let pick = null;
       for (const b of G.buses) {
         if (b.state !== 'slot' || b.filled >= b.cap) continue;
         const to = slotPose(b.slot);
         for (let k = 0; k < G.ring.length; k++) {
           if (G.ring[k] !== b.color) continue;
-          const p = ringPoint(seatS(k));
+          const p = seatPoint(k);
           const d = Math.hypot(p.x - to.x, p.y - to.y) + b.arrive * 1000;
           if (!pick || d < pick.d) pick = { d, k, b, p };
         }
@@ -477,11 +487,11 @@
         const { b, k, p } = pick;
         G.ring[k] = null;
         b.filled++; b.pending++;
-        G.boardT = BOARD_GAP;
+        G.boardT += BOARD_GAP;
         G.particles.push({ x0: p.x, y0: p.y, bus: b, t: 0, color: b.color });
-        sound('pop');
+        if (G.particles.length % 3 === 0) sound('pop');
         updateProgress();
-      }
+      } else { G.boardT = 0; break; }
     }
     for (let i = G.particles.length - 1; i >= 0; i--) {
       const p = G.particles[i];
@@ -516,7 +526,7 @@
     if (G.checkT > 0) { if (G.stuckT > 0) G.stuckT += dt; return; }
     G.checkT = 0.25;
     const canBoard = G.buses.some((b) => b.state === 'slot' && b.filled < b.cap && G.ring.includes(b.color));
-    const canFeed = G.queue.length > 0 && G.ring.includes(null);
+    const canFeed = G.queue.length > 0 && G.ring.some((c, k) => k % LANES === 0 && G.ring.slice(k, k + LANES).every((x) => x === null));
     let stuck = false;
     if (!canBoard && !canFeed) {
       if (freeSlot() < 0) stuck = true;
@@ -590,18 +600,10 @@
         ctx.stroke(); ctx.fill();
       }
     } else {
-      // seats showing how full the bus is
-      const cols = b.cap / 2, sp = (L - 17) / cols;
-      for (let i = 0; i < b.cap; i++) {
-        const cx = -L / 2 + 5 + sp * (Math.floor(i / 2) + 0.5), cy = i % 2 ? 3.3 : -3.3;
-        if (i < b.filled - b.pending) {
-          ctx.fillStyle = col.d;
-          ctx.beginPath(); ctx.arc(cx, cy, 2.8, 0, Math.PI * 2); ctx.fill();
-        } else {
-          ctx.fillStyle = 'rgba(15,23,42,0.15)';
-          ctx.beginPath(); ctx.arc(cx, cy, 2.2, 0, Math.PI * 2); ctx.fill();
-        }
-      }
+      // roof fills up from the back as passengers board
+      const frac = (b.filled - b.pending) / b.cap, inner = L - 13;
+      ctx.fillStyle = 'rgba(15,23,42,0.12)'; rr(-L / 2 + 4, -W / 2 + 5, inner, W - 10, 3); ctx.fill();
+      if (frac > 0) { ctx.fillStyle = col.d; rr(-L / 2 + 4, -W / 2 + 5, Math.max(4, inner * frac), W - 10, 3); ctx.fill(); }
     }
     if (b.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${b.flash * 2})`;
@@ -634,15 +636,16 @@
       ctx.closePath();
     };
     ctx.fillStyle = '#c7d7c0'; belt(); ctx.fill();
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 22; belt(); ctx.stroke();
-    ctx.strokeStyle = '#8f9ab0'; ctx.lineWidth = 17; ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = LANES * LANE_W + 9; belt(); ctx.stroke();
+    ctx.strokeStyle = '#8f9ab0'; ctx.lineWidth = LANES * LANE_W + 4; ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     for (let k = 0; k < G.ring.length; k++) {
+      if (k % LANES) continue;
       const p = ringPoint(seatS(k));
-      ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2); ctx.fill();
     }
     ctx.fillStyle = '#facc15';
-    ctx.beginPath(); ctx.moveTo(ringXL - 6, ringYT - 12); ctx.lineTo(ringXL + 6, ringYT - 12); ctx.lineTo(ringXL, ringYT - 5); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(ringXL - 6, ringYT - 19); ctx.lineTo(ringXL + 6, ringYT - 19); ctx.lineTo(ringXL, ringYT - 13); ctx.fill();
 
     // Station with bays
     ctx.fillStyle = '#5d6680'; ctx.fillRect(0, slotTop, cw, slotH);
@@ -676,14 +679,14 @@
     // People riding the carousel
     for (let k = 0; k < G.ring.length; k++) {
       if (G.ring[k] === null) continue;
-      const p = ringPoint(seatS(k));
-      drawPerson(p.x, p.y, G.ring[k]);
+      const p = seatPoint(k);
+      drawPerson(p.x, p.y, G.ring[k], RING_SCALE);
     }
     // Waiting line (back of line drawn first)
     const visible = Math.min(G.queue.length, Math.floor(qLen / Q_SP));
     for (let i = visible - 1; i >= 0; i--) {
       const p = queuePoint((i + G.shift) * Q_SP);
-      if (p) drawPerson(p.x, p.y, G.queue[i]);
+      if (p) drawPerson(p.x, p.y, G.queue[i], Q_SCALE);
     }
     if (G.queue.length > visible) {
       const p = qPath[qPath.length - 1];
@@ -725,7 +728,7 @@
     // Passengers hopping on
     for (const p of G.particles) {
       const to = slotPose(p.bus.slot), t = easeInOut(Math.min(1, p.t));
-      drawPerson(lerp(p.x0, to.x, t), lerp(p.y0, to.y, t) - Math.sin(Math.PI * t) * 18, p.color, 1 - t * 0.4);
+      drawPerson(lerp(p.x0, to.x, t), lerp(p.y0, to.y, t) - Math.sin(Math.PI * t) * 18, p.color, RING_SCALE * (1 - t * 0.3));
     }
   }
 
@@ -806,12 +809,14 @@
         if (['slot', 'flying', 'exiting'].includes(b.state)) need[b.color] = (need[b.color] || 0) + b.cap - b.filled;
       }
       for (const c of G.ring) if (c !== null && need[c] > 0) need[c]--;
-      const win = G.queue.slice(0, 60), front = [], rest = [];
-      for (const c of win) {
-        if (need[c] > 0) { front.push(c); need[c]--; } else rest.push(c);
+      const win = G.queue.slice(0, 240), front = [], rest = [];
+      // Move whole groups of 4 so the line stays in groups
+      for (let i = 0; i < win.length; i += LANES) {
+        const g = win.slice(i, i + LANES), c = g[0];
+        if (need[c] >= g.length) { front.push(...g); need[c] -= g.length; } else rest.push(...g);
       }
       if (!front.length) { toast('Nobody in line fits your parked buses yet'); return; }
-      const newQ = front.concat(rest, G.queue.slice(60));
+      const newQ = front.concat(rest, G.queue.slice(240));
       if (newQ.every((c, i) => c === G.queue[i])) { toast('The line is already sorted'); return; }
       G.queue = newQ;
       spendBooster('sort'); sound('magic');
