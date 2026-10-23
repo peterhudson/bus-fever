@@ -128,8 +128,8 @@
   function levelFeatures(n) {
     return {
       mystery: n >= 8 ? Math.min(0.35, 0.1 + (n - 8) * 0.01) : 0,   // share of buses hiding their color
-      flips: n >= 12 ? Math.min(5, 1 + Math.floor((n - 12) / 6)) : 0, // buses that turn around
-      tunnels: n >= 15 ? (n >= 30 ? 2 : 1) : 0,
+      flipAll: n >= 12 && n % 3 === 0,  // every bus turns around whenever one leaves
+      tunnels: n >= 15 && n % 3 !== 0 ? (n >= 30 ? 2 : 1) : 0,  // flip levels have no tunnels
     };
   }
   // Where the next bus out of a tunnel parks: right in front of its mouth
@@ -201,7 +201,7 @@
     return buses;
   }
 
-  // Clears the lot in a random order that the rules allow, turning flip buses
+  // Clears the lot in a random order that the rules allow, turning buses
   // around and letting tunnels release buses. Returns that order, or null if
   // the lot jams.
   function solveOrder(buses, tunnels, rng) {
@@ -222,7 +222,7 @@
         const m = tunnelMouth(t, tq[i][0].len);
         if (lot.some((o) => obbOverlap(m, o))) return;
         const spec = tq[i].shift();
-        lot.push({ ...m, cap: spec.cap, ref: spec });
+        lot.push({ ...m, cap: spec.cap, flip: spec.flip, ref: spec });
       });
     }
     return null;
@@ -237,7 +237,7 @@
       const L = buildLevel(n, attempt, levelFeatures(n));
       if (L) return L;
     }
-    return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0 });
+    return buildLevel(n, 0, { mystery: 0, flipAll: false, tunnels: 0 });
   }
 
   function buildLevel(n, attempt, feats) {
@@ -276,13 +276,19 @@
       buses.push(nb);
     }
 
-    // Flip buses and mystery buses
-    const pool = buses.filter((b) => !tunnels.some((t) => obbOverlap(tunnelMouth(t, b.len), b)));
-    for (let i = 0; i < feats.flips && pool.length; i++) pool.splice(ri(pool.length), 1)[0].flip = true;
+    // Flip levels: each bus was placed with a clear way out in the direction
+    // it will face when its turn comes (last placed leaves first). Wind each
+    // one back by the number of flips that happen before then.
+    if (feats.flipAll) {
+      buses.forEach((b, j) => {
+        b.flip = true;
+        if ((buses.length - 1 - j) % 2) b.ang += Math.PI;
+      });
+    }
     for (const b of buses) if (rng() < feats.mystery) b.mystery = true;
     for (const t of tunnels) for (const q of t.queue) if (rng() < feats.mystery) q.mystery = true;
 
-    const order = solveOrder(buses, tunnels, rng);
+    const order = feats.flipAll ? buses.slice().reverse() : solveOrder(buses, tunnels, rng);
     if (!order) return null;
 
     // Colors: every color appears at least once (tunnel buses included)
@@ -313,7 +319,7 @@
       s.need -= run;
       if (s.need <= 0) open.splice(i, 1);
     }
-    return { buses, tunnels, queue, attempt };
+    return { buses, tunnels, queue, attempt, flipAll: feats.flipAll };
   }
 
   // ---------- Layout ----------
@@ -405,6 +411,7 @@
     G = {
       buses: L.buses.map((b, i) => makeBus(b, i)),
       tunnels: L.tunnels.map((t) => ({ ...t, queue: t.queue.map((q) => ({ ...q })), shake: 0 })),
+      flipAll: L.flipAll,
       queue: L.queue.slice(), total: L.queue.length,
       slots: new Array(8).fill(null), tempBays: 0, arrivals: 0,
       shift: 0, boardT: 0, particles: [], vipMode: false,
@@ -461,7 +468,7 @@
     }
     if (G.buses.some((b) => b.flip) && !seen.flip) {
       seen.flip = true;
-      notes.push('<li><b>Gold-outlined buses</b> turn around every time another bus leaves the lot.</li>');
+      notes.push('<li><b>Flip levels 🔄</b>: every bus turns around each time a bus leaves the lot.</li>');
     }
     if (G.tunnels.length && !seen.tunnel) {
       seen.tunnel = true;
@@ -759,10 +766,6 @@
       const xh = L * 0.36, xb = L * 0.2;
       ctx.beginPath(); ctx.moveTo(xh, 0); ctx.lineTo(xb, -5.5); ctx.lineTo(xb, 5.5); ctx.closePath(); ctx.fill();
     }
-    if (b.flip && mode === 'arrow') {
-      ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2.4;
-      rr(-L / 2 - 1, -W / 2 - 1, L + 2, W + 2, 7); ctx.stroke();
-    }
     if (mode === 'arrow' && !b.mystery) {
       const x0 = -L * 0.26, x1 = L * 0.16, xh = L * 0.3;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -873,6 +876,14 @@
     // Parking lot
     ctx.fillStyle = '#d3dbe7'; ctx.fillRect(0, lotTop - 6, cw, ch - lotTop + 6);
     for (const t of G.tunnels) drawTunnel(t);
+    if (G.flipAll) {
+      ctx.font = '800 12px -apple-system, sans-serif';
+      const txt = '🔄 Flip level: buses turn around when one leaves';
+      const w = ctx.measureText(txt).width + 16;
+      ctx.fillStyle = 'rgba(30,64,175,0.9)'; rr((cw - w) / 2, lotTop + 2, w, 20, 10); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(txt, cw / 2, lotTop + 12.5);
+    }
 
     // People riding the carousel
     for (let k = 0; k < G.ring.length; k++) {
