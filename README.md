@@ -12,6 +12,14 @@ A no-ads, no-purchases bus parking puzzle for the phone, inspired by the "bus ja
 - Full buses drive away and free their bay. Board every passenger to win.
 - If the carousel is full and nobody on it matches a bus in the bays, you're stuck.
 
+Tap the crowd to make the carousel turn faster for a moment.
+
+Special pieces show up as you go:
+
+- **Mystery buses (level 8+)** are grey with a "?" until nothing blocks their way out (or you tap them).
+- **Flip buses (level 12+)** have a gold outline and turn around every time another bus leaves the lot.
+- **Tunnels (level 15+)** release a new bus whenever the spot in front of them is clear. The badge shows how many are left inside.
+
 Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up.
 
 ## No ads, no pay-to-win
@@ -53,7 +61,7 @@ python3 -m http.server 8123
 - `sw.js`: offline cache. Bump `VERSION` when shipping changes so installed copies update
 - `tools/autoplay.js`: Playwright bot that plays levels 1-50 to check difficulty
 
-Levels are generated from the level number, so the same level is always the same layout. The generator places buses so there's always an order that clears the lot, and builds the passenger line to match, so every level is solvable.
+Levels are generated from the level number, so the same level is always the same layout. The generator only keeps a layout once it has found an order that clears the lot (following flip buses and tunnels), then builds the passenger line from that order, so every level is solvable.
 
 Deployed with GitHub Pages from the `main` branch.
 

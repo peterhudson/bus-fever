@@ -14,7 +14,7 @@ const { chromium, devices } = require('playwright');
     const B = window.__bus, cv = document.getElementById('game');
     const out = [];
     for (let lvl = 1; lvl <= 50; lvl++) {
-      B.save.level = lvl; B.save.bays = bays; B.startLevel();
+      B.save.level = lvl; B.save.bays = bays; B.save.seenPieces = { mystery: true, flip: true, tunnel: true }; B.startLevel();
       const G = B.G; let taps = 0, steps = 0, result = 'timeout';
       while (steps++ < 60000) {
         B.update(0.02);
@@ -30,7 +30,7 @@ const { chromium, devices } = require('playwright');
         let front = null;
         for (const c in tally) if (front === null || tally[c] > tally[front]) front = +c;
         if (front === null) { if (G.ring.includes(null) && G.queue.length) continue; front = G.queue.find(c => !(cover[c] > 0)); if (front === undefined) continue; }
-        const lot = B.lotBuses(), free = lot.filter(x => !B.pathHit(x, lot));
+        const lot = B.lotBuses(), obs = B.obstacles(), free = lot.filter(x => !B.pathHit(x, obs));
         let best=null, bi=Infinity;
         for (const x of free) { let i = x.color === front ? -1 : G.queue.findIndex((c,k)=> c===x.color); if (i<0 && x.color !== front) i=1e9; if (i<bi){bi=i;best=x;} }
         if (best && best.color !== front) {
@@ -38,8 +38,8 @@ const { chromium, devices } = require('playwright');
           let bestChain = null;
           for (const t of lot.filter(x => x.color === front)) {
             let cur = t, chain = 0;
-            for (let g = 0; g < 20; g++) { const h = B.pathHit(cur, lot); if (!h) break; cur = h.other; chain++; }
-            if (!B.pathHit(cur, lot) && (!bestChain || chain < bestChain[1])) bestChain = [cur, chain];
+            for (let g = 0; g < 20; g++) { const h = B.pathHit(cur, obs); if (!h || h.other.tunnel) break; cur = h.other; chain++; }
+            if (!B.pathHit(cur, obs) && (!bestChain || chain < bestChain[1])) bestChain = [cur, chain];
           }
           if (bestChain && B.freeSlot() >= 0) best = bestChain[0];
         }
