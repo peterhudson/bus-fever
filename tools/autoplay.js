@@ -8,7 +8,7 @@ const { chromium, devices } = require('playwright');
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.addInitScript(() => localStorage.setItem('sarah-bus-jam-v1', JSON.stringify({level:1, seenHowTo:true})));
-  await p.goto('process.env.URL || "http://localhost:8123/"');
+  await p.goto(process.env.URL || 'http://localhost:8123/');
   await p.waitForTimeout(300);
   const res = await p.evaluate(({bays}) => {
     const B = window.__bus, cv = document.getElementById('game');
@@ -24,11 +24,15 @@ const { chromium, devices } = require('playwright');
         if (busy || B.freeSlot() < 0) continue;
         // demand: colors in queue order not covered by bay capacity
         const cover = {}; for (const x of G.buses) if (x.state==='slot') cover[x.color]=(cover[x.color]||0)+x.cap-x.filled;
-        const front = G.queue[0];
-        if (cover[front] > 0) continue;
+        // Target the color most common on the carousel that no parked bus is taking
+        const tally = {};
+        for (const c of G.ring) if (c !== null && !(cover[c] > 0)) tally[c] = (tally[c] || 0) + 1;
+        let front = null;
+        for (const c in tally) if (front === null || tally[c] > tally[front]) front = +c;
+        if (front === null) { if (G.ring.includes(null) && G.queue.length) continue; front = G.queue.find(c => !(cover[c] > 0)); if (front === undefined) continue; }
         const lot = B.lotBuses(), free = lot.filter(x => !B.pathHit(x, lot));
         let best=null, bi=Infinity;
-        for (const x of free) { let i = G.queue.findIndex((c,k)=> c===x.color); if (i<0) i=1e9; if (i<bi){bi=i;best=x;} }
+        for (const x of free) { let i = x.color === front ? -1 : G.queue.findIndex((c,k)=> c===x.color); if (i<0 && x.color !== front) i=1e9; if (i<bi){bi=i;best=x;} }
         if (best && best.color !== front) {
           // dig: follow the blocker chain from the least-buried front-color bus
           let bestChain = null;
