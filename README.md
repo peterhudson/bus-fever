@@ -8,9 +8,11 @@ A no-ads, no-purchases bus parking puzzle for the phone, inspired by the "bus ja
 
 - Tap a bus to drive it the way its arrow points. If another bus is in the way, it bumps and stays put.
 - Buses that get out park in a bay at the station.
-- Passengers board from the front of the line only, onto a parked bus of their own color.
+- The waiting line feeds a turning carousel. Anyone riding the carousel hops onto a parked bus of their own color.
 - Full buses drive away and free their bay. Board every passenger to win.
-- If every bay is full and none matches the next passenger, you're stuck.
+- If the carousel is full and nobody on it matches a bus in the bays, you're stuck.
+
+Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up.
 
 ## No ads, no pay-to-win
 
