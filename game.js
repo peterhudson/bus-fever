@@ -26,6 +26,7 @@
     { c: '#f8fafc', d: '#94a3b8', l: '#ffffff' }, // white
   ];
 
+  const MYSTERY = { c: '#64748b', d: '#334155', l: '#94a3b8' };
   const $ = (s) => document.querySelector(s);
   const canvas = $('#game');
   const ctx = canvas.getContext('2d');
@@ -122,9 +123,24 @@
   }
 
   // ---------- Level generation ----------
+  // Special pieces that show up as levels go on
+  const TUNNEL = 22;      // a tunnel is a 2x2-cell block in the lot
+  function levelFeatures(n) {
+    return {
+      mystery: n >= 8 ? Math.min(0.35, 0.1 + (n - 8) * 0.01) : 0,   // share of buses hiding their color
+      flipAll: n >= 12 && n % 3 === 0,  // every bus turns around whenever one leaves
+      tunnels: n >= 15 && n % 3 !== 0 ? (n >= 30 ? 2 : 1) : 0,  // flip levels have no tunnels
+    };
+  }
+  // Where the next bus out of a tunnel parks: right in front of its mouth
+  function tunnelMouth(t, len) {
+    const d = TUNNEL / 2 + 1 + (len + 2) / 2;
+    return { x: t.x + Math.cos(t.ang) * d, y: t.y + Math.sin(t.ang) * d, ang: t.ang, len, wid: BUS_W };
+  }
+
   // Later levels: buses packed tightly on a grid of 12-unit cells, arrows
   // along the grid. A bus is 2 cells wide and 3, 4 or 5 cells long.
-  function packGrid(n, target, rng) {
+  function packGrid(n, target, rng, nTunnels, tunnels) {
     const C = 12, ri = (k) => Math.floor(rng() * k);
     // Size the block so the buses fill most of it
     const area = (target * 8.4) / 0.82, aspect = LW / LH;
@@ -132,10 +148,38 @@
     const rows = Math.min(Math.floor(LH / C), Math.round(area / cols));
     const ox = (LW - cols * C) / 2, oy = (LH - rows * C) / 2;
     const used = new Array(cols * rows).fill(false);
+    const isFree = (gx, gy, w, h) => {
+      if (gx < 0 || gy < 0 || gx + w > cols || gy + h > rows) return false;
+      for (let yy = gy; yy < gy + h; yy++) for (let xx = gx; xx < gx + w; xx++) if (used[yy * cols + xx]) return false;
+      return true;
+    };
+    const take = (gx, gy, w, h) => { for (let yy = gy; yy < gy + h; yy++) for (let xx = gx; xx < gx + w; xx++) used[yy * cols + xx] = true; };
     const buses = [];
+    const pickCap = () => (rng() < 0.4 ? 16 : rng() < 0.3 ? 40 : 24);
+    const cellsOf = (cap) => (cap === 16 ? 3 : cap === 24 ? 4 : 5);
+
+    // Tunnels first, each with the first of its buses parked at the mouth
+    for (let tries = 0; tunnels.length < nTunnels && tries < 300; tries++) {
+      const cap = pickCap(), cells = cellsOf(cap);
+      const dir = ri(4), dx = [1, 0, -1, 0][dir], dy = [0, 1, 0, -1][dir];
+      const gx = ri(cols - 1), gy = ri(rows - 1);
+      // the mouth bus footprint, in cells
+      const bw = dx ? cells : 2, bh = dx ? 2 : cells;
+      const bx = dx > 0 ? gx + 2 : dx < 0 ? gx - cells : gx;
+      const by = dy > 0 ? gy + 2 : dy < 0 ? gy - cells : gy;
+      if (!isFree(gx, gy, 2, 2) || !isFree(bx, by, bw, bh)) continue;
+      const t = { x: ox + (gx + 1) * C, y: oy + (gy + 1) * C, ang: (dir * Math.PI) / 2, len: TUNNEL, wid: TUNNEL, tunnel: true, queue: [] };
+      const first = { ...tunnelMouth(t, cells * C - 2), cap };
+      if (pathHit(first, buses.concat(tunnels))) continue;
+      take(gx, gy, 2, 2); take(bx, by, bw, bh);
+      const more = 2 + ri(3);
+      for (let i = 0; i < more; i++) t.queue.push({ cap, len: cells * C - 2 });
+      tunnels.push(t);
+      buses.push(first);
+    }
+
     for (let tries = 0; buses.length < target && tries < 12000; tries++) {
-      const cap = rng() < 0.4 ? 16 : rng() < 0.3 ? 40 : 24;
-      const cells = cap === 16 ? 3 : cap === 24 ? 4 : 5;
+      const cap = pickCap(), cells = cellsOf(cap);
       const horiz = rng() < 0.5;
       const w = horiz ? cells : 2, h = horiz ? 2 : cells;
       // Early buses go near the middle so the block fills from the inside out
@@ -147,29 +191,63 @@
           if (dist(x2, y2) < dist(gx, gy)) { gx = x2; gy = y2; }
         }
       }
-      let free = true;
-      for (let yy = gy; yy < gy + h && free; yy++) for (let xx = gx; xx < gx + w; xx++) if (used[yy * cols + xx]) { free = false; break; }
-      if (!free) continue;
+      if (!isFree(gx, gy, w, h)) continue;
       const ang = horiz ? (rng() < 0.5 ? 0 : Math.PI) : rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2;
       const nb = { x: ox + (gx + w / 2) * C, y: oy + (gy + h / 2) * C, ang, len: cells * C - 2, wid: BUS_W, cap };
-      if (pathHit(nb, buses)) continue;
-      for (let yy = gy; yy < gy + h; yy++) for (let xx = gx; xx < gx + w; xx++) used[yy * cols + xx] = true;
+      if (pathHit(nb, buses.concat(tunnels))) continue;
+      take(gx, gy, w, h);
       buses.push(nb);
     }
-    buses.fill = used.filter(Boolean).length / used.length;
     return buses;
   }
 
-  // Buses are placed one at a time, each with a clear exit path, so removing
-  // them in reverse order always works. The passenger line is then built by
-  // simulating that order with a few bays, so every level is solvable.
+  // Clears the lot in a random order that the rules allow, turning buses
+  // around and letting tunnels release buses. Returns that order, or null if
+  // the lot jams.
+  function solveOrder(buses, tunnels, rng) {
+    const lot = buses.map((b) => ({ ...b, ref: b }));
+    const tq = tunnels.map((t) => t.queue.slice());
+    const order = [];
+    for (let guard = 0; guard < 1000; guard++) {
+      if (!lot.length && tq.every((q) => !q.length)) return order;
+      const obs = lot.concat(tunnels);
+      const free = lot.filter((b) => !pathHit(b, obs));
+      if (!free.length) return null;
+      const b = free[Math.floor(rng() * free.length)];
+      lot.splice(lot.indexOf(b), 1);
+      order.push(b.ref);
+      for (const o of lot) if (o.flip) o.ang += Math.PI;
+      tunnels.forEach((t, i) => {
+        if (!tq[i].length) return;
+        const m = tunnelMouth(t, tq[i][0].len);
+        if (lot.some((o) => obbOverlap(m, o))) return;
+        const spec = tq[i].shift();
+        lot.push({ ...m, cap: spec.cap, flip: spec.flip, ref: spec });
+      });
+    }
+    return null;
+  }
+
+  // Builds a level from its number. The same number always gives the same
+  // level. A level is only kept if the lot can be cleared, and the passenger
+  // line is built by playing that clearing order with a few bays, so every
+  // level is solvable.
   function genLevel(n) {
-    const rng = mulberry32(n * 7919 + 13);
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const L = buildLevel(n, attempt, levelFeatures(n));
+      if (L) return L;
+    }
+    return buildLevel(n, 0, { mystery: 0, flipAll: false, tunnels: 0 });
+  }
+
+  function buildLevel(n, attempt, feats) {
+    const rng = mulberry32(n * 7919 + 13 + attempt * 104729);
     const ri = (k) => Math.floor(rng() * k);
     const packed = n > 4;
     const target = packed ? Math.min(8 + n, 50) : 5 + Math.floor(n * 1.15);
     const nc = Math.min(2 + Math.floor((n + 2) / 3), COLORS.length, target);
-    const buses = packed ? packGrid(n, target, rng) : [];
+    const tunnels = [];
+    const buses = packed ? packGrid(n, target, rng, feats.tunnels, tunnels) : [];
     for (let tries = 0; !packed && buses.length < target && tries < 4000; tries++) {
       const cap = rng() < 0.42 ? 16 : n >= 4 && rng() < 0.28 ? 40 : 24;
       const len = BUS_LEN[cap];
@@ -198,17 +276,31 @@
       buses.push(nb);
     }
 
-    // Colors: every color appears at least once
-    const cols = buses.map((_, i) => (i < nc ? i : ri(nc)));
+    // Flip levels: each bus was placed with a clear way out in the direction
+    // it will face when its turn comes (last placed leaves first). Wind each
+    // one back by the number of flips that happen before then.
+    if (feats.flipAll) {
+      buses.forEach((b, j) => {
+        b.flip = true;
+        if ((buses.length - 1 - j) % 2) b.ang += Math.PI;
+      });
+    }
+    for (const b of buses) if (rng() < feats.mystery) b.mystery = true;
+    for (const t of tunnels) for (const q of t.queue) if (rng() < feats.mystery) q.mystery = true;
+
+    const order = feats.flipAll ? buses.slice().reverse() : solveOrder(buses, tunnels, rng);
+    if (!order) return null;
+
+    // Colors: every color appears at least once (tunnel buses included)
+    const cols = order.map((_, i) => (i < nc ? i : ri(nc)));
     for (let i = cols.length - 1; i > 0; i--) {
       const j = ri(i + 1);
       [cols[i], cols[j]] = [cols[j], cols[i]];
     }
-    buses.forEach((b, i) => (b.color = cols[i]));
+    order.forEach((b, i) => (b.color = cols[i]));
 
     // Passenger line
     const K = n < 6 ? 2 : n < 15 ? 3 : 4;
-    const order = buses.slice().reverse();
     const open = [], queue = [];
     let next = 0;
     for (;;) {
@@ -227,7 +319,7 @@
       s.need -= run;
       if (s.need <= 0) open.splice(i, 1);
     }
-    return { buses, queue };
+    return { buses, tunnels, queue, attempt, flipAll: feats.flipAll };
   }
 
   // ---------- Layout ----------
@@ -317,7 +409,9 @@
   function startLevel() {
     const L = genLevel(save.level);
     G = {
-      buses: L.buses.map((b, i) => ({ ...b, id: i, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0 })),
+      buses: L.buses.map((b, i) => makeBus(b, i)),
+      tunnels: L.tunnels.map((t) => ({ ...t, queue: t.queue.map((q) => ({ ...q })), shake: 0 })),
+      flipAll: L.flipAll,
       queue: L.queue.slice(), total: L.queue.length,
       slots: new Array(8).fill(null), tempBays: 0, arrivals: 0,
       shift: 0, boardT: 0, particles: [], vipMode: false,
@@ -326,7 +420,64 @@
     };
     // The carousel starts full
     for (let k = 0; k < G.ring.length && G.queue.length; k++) G.ring[k] = G.queue.shift();
+    revealFree();
     updateHUD();
+    introduceNewPieces();
+  }
+  function makeBus(b, id) {
+    return { ...b, id, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0, flipT: 0, emergeT: 0 };
+  }
+
+  // Obstacles in the lot: parked buses and tunnels
+  const obstacles = () => lotBuses().concat(G.tunnels);
+
+  // A mystery bus shows its color once nothing blocks its way out
+  function revealFree() {
+    const obs = obstacles();
+    for (const b of obs) {
+      if (b.mystery && !b.tunnel && !pathHit(b, obs)) { b.mystery = false; b.flash = 0.4; }
+    }
+  }
+
+  // Release the next bus from any tunnel whose mouth is clear
+  function spawnFromTunnels() {
+    for (const t of G.tunnels) {
+      if (!t.queue.length) continue;
+      const spec = t.queue[0], m = tunnelMouth(t, spec.len);
+      const blocked = G.buses.some((b) => {
+        if (b.state === 'lot') return obbOverlap(m, b);
+        if (b.state === 'exiting') return obbOverlap(m, { ...b, x: b.x + Math.cos(b.ang) * b.ex, y: b.y + Math.sin(b.ang) * b.ex });
+        return false;
+      });
+      if (blocked) continue;
+      t.queue.shift();
+      const b = makeBus({ ...spec, ...m }, G.buses.length);
+      b.emergeT = 0.35;
+      G.buses.push(b);
+      revealFree();
+    }
+  }
+
+  // The first time a level has a new kind of piece, explain it
+  function introduceNewPieces() {
+    const seen = (save.seenPieces = save.seenPieces || {});
+    const notes = [];
+    if (G.buses.some((b) => b.mystery) && !seen.mystery) {
+      seen.mystery = true;
+      notes.push('<li><b>Mystery buses ❓</b> hide their color until nothing is blocking their way out.</li>');
+    }
+    if (G.buses.some((b) => b.flip) && !seen.flip) {
+      seen.flip = true;
+      notes.push('<li><b>Flip levels 🔄</b>: every bus turns around each time a bus leaves the lot.</li>');
+    }
+    if (G.tunnels.length && !seen.tunnel) {
+      seen.tunnel = true;
+      notes.push('<li><b>Tunnels</b> send out a new bus whenever the spot in front of them is clear. The number shows how many are left inside.</li>');
+    }
+    if (!notes.length) return;
+    persist();
+    showModal(`<div class="big">✨</div><h2>Something new!</h2><ul class="howto">${notes.join('')}</ul>
+      <button class="btn" data-a="close">Got it</button>`);
   }
 
   function freeSlot() {
@@ -341,7 +492,13 @@
     if (b.state === 'lot' && b.bumpT > 0) d += b.bumpD * Math.sin(Math.PI * (1 - b.bumpT / BUMP_DUR));
     x += Math.cos(b.ang) * d; y += Math.sin(b.ang) * d;
     if (b.shake > 0) { x += Math.sin(b.shake * 60) * 1.5; }
-    return { x: lotX + x * ls, y: lotY + y * ls, ang: b.ang, s: ls };
+    if (b.emergeT > 0) {
+      // slide out of the tunnel behind it
+      const back = (b.emergeT / 0.35) * (b.len / 2 + TUNNEL / 2);
+      x -= Math.cos(b.ang) * back; y -= Math.sin(b.ang) * back;
+    }
+    const ang = b.ang - Math.PI * (b.flipT / 0.3);
+    return { x: lotX + x * ls, y: lotY + y * ls, ang, s: ls };
   }
   function slotPose(i) {
     const r = slotRect(i);
@@ -388,6 +545,8 @@
     const r = canvas.getBoundingClientRect();
     const px = e.clientX - r.left, py = e.clientY - r.top;
 
+    if (py < slotTop) { G.boostT = 1.5; return; }
+
     for (let i = bays() + 1; i <= MAX_BAYS; i++) {
       const s = slotRect(i);
       if (px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h) { openShop(); return; }
@@ -406,7 +565,8 @@
     }
     const slot = freeSlot();
     if (slot < 0) { toast('All bays are full!'); b.shake = 0.3; sound('bump'); return; }
-    const hit = pathHit(b, lotBuses());
+    if (b.mystery) { b.mystery = false; b.flash = 0.4; }
+    const hit = pathHit(b, obstacles());
     if (hit) {
       b.bumpT = BUMP_DUR; b.bumpD = Math.max(0, hit.d - 2);
       hit.other.shake = 0.35;
@@ -422,6 +582,9 @@
     b.arrive = ++G.arrivals;
     if (direct) { b.from = lotPose(b); b.state = 'flying'; b.t = 0; }
     else { b.state = 'exiting'; b.ex = 0; }
+    // Flip buses turn around whenever a bus leaves the lot
+    for (const o of lotBuses()) if (o.flip) { o.ang += Math.PI; o.flipT = 0.3; }
+    revealFree();
     sound('go');
   }
 
@@ -431,6 +594,8 @@
     for (const b of G.buses) {
       if (b.shake > 0) b.shake = Math.max(0, b.shake - dt);
       if (b.flash > 0) b.flash = Math.max(0, b.flash - dt);
+      if (b.flipT > 0) b.flipT = Math.max(0, b.flipT - dt);
+      if (b.emergeT > 0) b.emergeT = Math.max(0, b.emergeT - dt);
       switch (b.state) {
         case 'lot':
           if (b.bumpT > 0) b.bumpT = Math.max(0, b.bumpT - dt);
@@ -458,7 +623,9 @@
     // Carousel turns; an empty row passing the entrance takes the next group of 4
     G.shift = Math.max(0, G.shift - dt * 40);
     const prevOff = G.ringOff;
-    G.ringOff += RING_SPEED * dt;
+    // Tapping the crowd speeds the carousel up for a moment
+    G.boostT = Math.max(0, (G.boostT || 0) - dt);
+    G.ringOff += RING_SPEED * (G.boostT > 0 ? 2.5 : 1) * dt;
     for (let k = 0; k < G.ring.length; k += LANES) {
       const a = Math.floor((seatBase(k) + prevOff) / ringLen), b = Math.floor((seatBase(k) + G.ringOff) / ringLen);
       if (a === b || !G.queue.length) continue;
@@ -508,7 +675,8 @@
       }
     }
 
-    if (!G.won && G.buses.every((b) => b.state === 'gone')) {
+    spawnFromTunnels();
+    if (!G.won && G.buses.every((b) => b.state === 'gone') && G.tunnels.every((t) => !t.queue.length)) {
       G.won = true;
       setTimeout(showWin, 350);
     }
@@ -531,8 +699,8 @@
     if (!canBoard && !canFeed) {
       if (freeSlot() < 0) stuck = true;
       else {
-        const lot = lotBuses();
-        stuck = !lot.some((b) => !pathHit(b, lot));
+        const obs = obstacles();
+        stuck = !lotBuses().some((b) => !pathHit(b, obs));
       }
     }
     if (stuck) {
@@ -563,7 +731,7 @@
   }
 
   function drawBus(b, pose, mode) {
-    const col = COLORS[b.color], L = b.len, W = b.wid;
+    const col = b.mystery && mode === 'arrow' ? MYSTERY : COLORS[b.color], L = b.len, W = b.wid;
     ctx.save();
     if (pose.alpha !== undefined) ctx.globalAlpha = Math.max(0, pose.alpha);
     ctx.translate(pose.x, pose.y);
@@ -590,7 +758,15 @@
     ctx.fillStyle = col.l;
     rr(-L / 2 + 4, -W / 2 + 5, L - 13, W - 10, 3); ctx.fill();
 
-    if (mode === 'arrow') {
+    if (b.mystery && mode === 'arrow') {
+      // a big "?" with just the arrowhead, so the direction still shows
+      ctx.fillStyle = '#fff'; ctx.font = '900 14px -apple-system, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.save(); ctx.translate(-L * 0.08, 0); ctx.rotate(-pose.ang); ctx.fillText('?', 0, 1); ctx.restore();
+      const xh = L * 0.36, xb = L * 0.2;
+      ctx.beginPath(); ctx.moveTo(xh, 0); ctx.lineTo(xb, -5.5); ctx.lineTo(xb, 5.5); ctx.closePath(); ctx.fill();
+    }
+    if (mode === 'arrow' && !b.mystery) {
       const x0 = -L * 0.26, x1 = L * 0.16, xh = L * 0.3;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       for (const [style, lw] of [['rgba(15,23,42,0.45)', 5.5], ['#fff', 3.2]]) {
@@ -610,6 +786,30 @@
       rr(-L / 2, -W / 2, L, W, 6); ctx.fill();
     }
     ctx.restore();
+  }
+
+  function drawTunnel(t) {
+    const h = TUNNEL / 2;
+    ctx.save();
+    ctx.translate(lotX + t.x * ls, lotY + t.y * ls);
+    ctx.rotate(t.ang); ctx.scale(ls, ls);
+    ctx.fillStyle = 'rgba(15,23,42,0.22)'; rr(-h + 1.5, -h + 3, TUNNEL, TUNNEL, 5); ctx.fill();
+    ctx.fillStyle = '#57534e'; rr(-h, -h, TUNNEL, TUNNEL, 5); ctx.fill();
+    ctx.fillStyle = '#4ade80'; rr(-h + 2, -h + 2, TUNNEL - 4, TUNNEL - 4, 4); ctx.fill();  // grass on the roof
+    // dark archway on the mouth side
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath(); ctx.moveTo(h, -h + 4); ctx.lineTo(h - 6, -h + 4);
+    ctx.arc(h - 6, 0, h - 4, -Math.PI / 2, Math.PI / 2, true); ctx.lineTo(h, h - 4); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if (t.queue.length) {
+      // count badge on the back corner, away from the mouth
+      const bx = t.x - Math.cos(t.ang) * 6, by = t.y - Math.sin(t.ang) * 6;
+      const x = lotX + bx * ls, y = lotY + by * ls;
+      ctx.fillStyle = '#1e40af'; rr(x - 6.5, y - 6, 13, 12, 4); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = '900 9px -apple-system, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(t.queue.length), x, y + 0.5);
+    }
   }
 
   let clock = 0;
@@ -675,6 +875,15 @@
 
     // Parking lot
     ctx.fillStyle = '#d3dbe7'; ctx.fillRect(0, lotTop - 6, cw, ch - lotTop + 6);
+    for (const t of G.tunnels) drawTunnel(t);
+    if (G.flipAll) {
+      ctx.font = '800 12px -apple-system, sans-serif';
+      const txt = '🔄 Flip level: buses turn around when one leaves';
+      const w = ctx.measureText(txt).width + 16;
+      ctx.fillStyle = 'rgba(30,64,175,0.9)'; rr((cw - w) / 2, lotTop + 2, w, 20, 10); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(txt, cw / 2, lotTop + 12.5);
+    }
 
     // People riding the carousel
     for (let k = 0; k < G.ring.length; k++) {
@@ -934,6 +1143,7 @@
       <li>Buses that get out park in a bay. The line feeds a turning carousel, and anyone on it hops onto a bus of their color.</li>
       <li>Full buses drive away. Clear every passenger to win!</li>
       <li>If the carousel fills up and nobody on it matches a parked bus, you're stuck, so plan ahead.</li>
+      <li>Tap the crowd to make the carousel turn faster for a moment.</li>
       <li>Earn coins to unlock more bays and boosters in the shop.</li></ol>`;
   }
 
@@ -989,5 +1199,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for testing
-  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, freeSlot, startLevel, get G() { return G; }, get save() { return save; } };
+  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, get G() { return G; }, get save() { return save; } };
 })();
