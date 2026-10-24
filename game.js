@@ -138,7 +138,8 @@
   function levelFeatures(n) {
     return {
       mystery: n >= 8 ? Math.min(0.35, 0.1 + (n - 8) * 0.01) : 0,   // share of buses hiding their color
-      flipAll: n >= 12 && n % 3 === 0,  // every bus turns around whenever one leaves
+      // share of buses that turn around whenever any bus leaves (flip levels only)
+      flips: n >= 12 && n % 3 === 0 ? Math.min(0.5, 0.25 + (n - 12) * 0.008) : 0,
       tunnels: n >= 15 && n % 3 !== 0 ? (n >= 30 ? 2 : 1) : 0,  // flip levels have no tunnels
       shape: isHard(n) ? SHAPES[(n / 10 - 1) % SHAPES.length] : null,
     };
@@ -254,7 +255,7 @@
       const L = buildLevel(n, attempt, levelFeatures(n));
       if (L) return L;
     }
-    return buildLevel(n, 0, { mystery: 0, flipAll: false, tunnels: 0, shape: null });
+    return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0, shape: null });
   }
 
   function buildLevel(n, attempt, feats) {
@@ -293,11 +294,13 @@
       buses.push(nb);
     }
 
-    // Flip levels: each bus was placed with a clear way out in the direction
-    // it will face when its turn comes (last placed leaves first). Wind each
-    // one back by the number of flips that happen before then.
-    if (feats.flipAll) {
+    // Flip levels: some buses (marked with a turn-around sign) flip whenever
+    // any bus leaves. Each bus was placed with a clear way out in the direction
+    // it will face when its turn comes (last placed leaves first), so wind each
+    // flipper back by the number of buses that leave before it.
+    if (feats.flips) {
       buses.forEach((b, j) => {
+        if (rng() >= feats.flips) return;
         b.flip = true;
         if ((buses.length - 1 - j) % 2) b.ang += Math.PI;
       });
@@ -305,7 +308,7 @@
     for (const b of buses) if (rng() < feats.mystery) b.mystery = true;
     for (const t of tunnels) for (const q of t.queue) if (rng() < feats.mystery) q.mystery = true;
 
-    const order = feats.flipAll ? buses.slice().reverse() : solveOrder(buses, tunnels, rng);
+    const order = feats.flips ? buses.slice().reverse() : solveOrder(buses, tunnels, rng);
     if (!order) return null;
 
     // Colors: every color appears at least once (tunnel buses included)
@@ -336,15 +339,15 @@
       s.need -= run;
       if (s.need <= 0) open.splice(i, 1);
     }
-    return { buses, tunnels, queue, attempt, flipAll: feats.flipAll };
+    return { buses, tunnels, queue, attempt };
   }
 
   // ---------- Layout ----------
   let dpr = 1, cw = 0, ch = 0, crowdH = 0, slotTop = 0, slotH = 0;
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
-  let qPath = [], qLen = 0;
-  let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1;
+  let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1, feedTop = 0;
   const Q_SP = 12, Q_ROW = 30, RING_SCALE = 0.56, LANE_W = 6.4;  // the line moves 4 abreast, Q_SP apart
+  const FEED_ROWS = 5;    // rows of each feeder line you can see; the rest is off screen
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -361,42 +364,32 @@
     slotX0 = (cw - (slotW * 8 + slotGap * 7)) / 2;
     slotScale = Math.min((slotH - 36) / BUS_LEN[40], (slotW - 8) / BUS_W);
 
-    // Carousel: a stadium-shaped loop just above the bays
-    ringYB = crowdH - 18; ringYT = ringYB - 2 * ringR;
-    ringXL = 16 + ringR; ringXR = cw - 16 - ringR;
-    ringLen = 2 * (ringXR - ringXL) + 2 * Math.PI * ringR;
+    if (G) ringLayout();
+  }
 
-    // Snake-shaped waiting line above it; the front stands by the carousel entrance
-    const m = 18, yb = ringYT - 30;
-    qPath = [[ringXL, yb]];
-    let y = yb, right = true;
-    qPath.push([cw - m, y]);
-    while (y - Q_ROW > Q_ROW / 2) {
-      y -= Q_ROW;
-      qPath.push([right ? cw - m : m, y]);
-      right = !right;
-      qPath.push([right ? cw - m : m, y]);
-    }
-    qLen = 0;
-    for (let i = 1; i < qPath.length; i++) qLen += Math.hypot(qPath[i][0] - qPath[i - 1][0], qPath[i][1] - qPath[i - 1][1]);
+  // Carousel: a stadium-shaped loop just above the bays, with two feeder lines
+  // coming down into its top corners. Its size follows the number of rows it
+  // holds, and its shape (round or long and flat) changes from level to level.
+  function ringLayout() {
+    feedTop = FEED_ROWS * Q_SP + 10;
+    ringYB = crowdH - 18;
+    const rows = G.ring.length / LANES, maxR = Math.max(14, (ringYB - feedTop) / 2);
+    ringR = Math.max(14, Math.min(maxR * [1, 0.72, 0.5][save.level % 3], (rows * 14 * 0.6) / (2 * Math.PI)));
+    const maxL1 = cw - 2 * (16 + ringR);
+    const L1 = Math.max(48, Math.min(maxL1, (rows * 14 - 2 * Math.PI * ringR) / 2));
+    ringYT = ringYB - 2 * ringR;
+    ringXL = (cw - L1) / 2; ringXR = ringXL + L1;
+    ringLen = 2 * L1 + 2 * Math.PI * ringR;
   }
-  function queuePoint(s) {
-    for (let i = 1; i < qPath.length; i++) {
-      const [x0, y0] = qPath[i - 1], [x1, y1] = qPath[i];
-      const L = Math.hypot(x1 - x0, y1 - y0);
-      if (s <= L) return { x: x0 + ((x1 - x0) * s) / L, y: y0 + ((y1 - y0) * s) / L };
-      s -= L;
-    }
-    return null;
-  }
-  // Person i in the waiting line, standing in groups of LANES across the path
-  function queueSpot(i) {
-    const s = (Math.floor(i / LANES) + G.shift / LANES) * Q_SP;
-    const p = queuePoint(s), q = queuePoint(s + 1) || p;
-    if (!p) return null;
-    const tx = q.x - p.x, ty = q.y - p.y, l = Math.hypot(tx, ty) || 1;
-    const off = ((i % LANES) - (LANES - 1) / 2) * LANE_W;
-    return { x: p.x - (ty / l) * off, y: p.y + (tx / l) * off };
+  // Two feeder lines: the left one empties into the carousel first, then the right.
+  // G.leftN people at the front of G.queue are in the left line.
+  const feedX = (side) => (side ? ringXR : ringXL);
+  const activeFeed = () => (G.leftN > 0 ? 0 : 1);
+  // Person i of a feeder line, standing in groups of LANES across it
+  function feedSpot(side, i) {
+    const shift = side === activeFeed() ? G.shift / LANES : 0;
+    const y = ringYT - 14 - (Math.floor(i / LANES) + shift) * Q_SP;
+    return { x: feedX(side) + ((i % LANES) - (LANES - 1) / 2) * LANE_W, y };
   }
   // Point on the carousel, s measured clockwise from the entrance (top left)
   function ringPoint(s) {
@@ -414,6 +407,8 @@
   // Seats come in rows of LANES across the belt
   const seatBase = (k) => Math.floor(k / LANES) * (ringLen / (G.ring.length / LANES));
   const seatS = (k) => seatBase(k) + G.ringOff;
+  // A row's color when all 4 people in it share one, else null (rows fill and empty together)
+  const rowColor = (k) => (G.ring[k] !== null && G.ring[k + 1] === G.ring[k] && G.ring[k + 2] === G.ring[k] && G.ring[k + 3] === G.ring[k] ? G.ring[k] : null);
   // True for the stretch of the carousel that runs past the bays: the bottom
   // straight plus the bottom half of each end
   function nearBays(s) {
@@ -444,15 +439,16 @@
     G = {
       buses: L.buses.map((b, i) => makeBus(b, i)),
       tunnels: L.tunnels.map((t) => ({ ...t, queue: t.queue.map((q) => ({ ...q })), shake: 0 })),
-      flipAll: L.flipAll,
       queue: L.queue.slice(), total: L.queue.length,
       slots: new Array(8).fill(null), tempBays: 0, arrivals: 0,
       shift: 0, boardT: 0, particles: [], vipMode: false,
       ring: new Array(ringSeats(save.level)).fill(null), ringOff: 0,
       modal: false, won: false, stuckT: 0, checkT: 0, failDismissed: false,
     };
-    // The carousel starts full
+    // The carousel starts full; the left feeder line holds the first half of the rest
     for (let k = 0; k < G.ring.length && G.queue.length; k++) G.ring[k] = G.queue.shift();
+    G.leftN = LANES * Math.ceil(G.queue.length / LANES / 2);
+    ringLayout();
     revealFree();
     updateHUD();
     introduceNewPieces();
@@ -502,7 +498,7 @@
     }
     if (G.buses.some((b) => b.flip) && !seen.flip) {
       seen.flip = true;
-      notes.push('<li><b>Flip levels 🔄</b>: every bus turns around each time a bus leaves the lot.</li>');
+      notes.push('<li><b>Flip buses 🔄</b> carry a turn-around sign. They turn around each time any bus leaves the lot.</li>');
     }
     if (G.tunnels.length && !seen.tunnel) {
       seen.tunnel = true;
@@ -661,39 +657,42 @@
     G.boostT = Math.max(0, (G.boostT || 0) - dt);
     G.ringOff += RING_SPEED * (G.boostT > 0 ? 2.5 : 1) * dt;
     for (let k = 0; k < G.ring.length; k += LANES) {
-      const a = Math.floor((seatBase(k) + prevOff) / ringLen), b = Math.floor((seatBase(k) + G.ringOff) / ringLen);
+      const s0 = activeFeed() ? ringXR - ringXL : 0;  // where the active feeder joins
+      const a = Math.floor((seatBase(k) + prevOff - s0) / ringLen), b = Math.floor((seatBase(k) + G.ringOff - s0) / ringLen);
       if (a === b || !G.queue.length) continue;
-      let empty = true;
-      for (let j = 0; j < LANES; j++) if (G.ring[k + j] !== null) empty = false;
-      if (!empty) continue;
+      if (G.ring[k] !== null) continue;
       for (let j = 0; j < LANES && G.queue.length; j++) G.ring[k + j] = G.queue.shift();
+      G.leftN = Math.max(0, G.leftN - LANES);
       G.shift += LANES;
     }
 
-    // Boarding: people hop onto a parked bus of their color as they pass in
-    // front of its bay along the bottom of the carousel
+    // Boarding: a row of 4 hops onto a parked bus of their color as they pass
+    // in front of its bay along the bottom of the carousel. Bays beyond the
+    // ends of a small carousel are reached from its curved ends.
     G.boardT -= dt;
     while (G.boardT <= 0) {
       let pick = null;
       for (const b of G.buses) {
-        if (b.state !== 'slot' || b.filled >= b.cap) continue;
-        const to = slotPose(b.slot);
-        for (let k = 0; k < G.ring.length; k++) {
-          if (G.ring[k] !== b.color) continue;
-          if (!nearBays(seatS(k))) continue;
-          const p = seatPoint(k);
-          if (Math.abs(p.x - to.x) > slotW / 2 + slotGap + 4) continue;
-          const d = Math.abs(p.x - to.x) + b.arrive * 1000;
-          if (!pick || d < pick.d) pick = { d, k, b, p };
+        if (b.state !== 'slot' || b.cap - b.filled < LANES) continue;
+        const to = slotPose(b.slot), tx = Math.max(ringXL - ringR * 0.7, Math.min(ringXR + ringR * 0.7, to.x));
+        for (let k = 0; k < G.ring.length; k += LANES) {
+          if (rowColor(k) !== b.color || !nearBays(seatS(k))) continue;
+          const p = ringPoint(seatS(k));
+          if (Math.abs(p.x - tx) > slotW / 2 + slotGap + 4) continue;
+          const d = Math.abs(p.x - tx) + b.arrive * 1000;
+          if (!pick || d < pick.d) pick = { d, k, b };
         }
       }
       if (pick) {
-        const { b, k, p } = pick;
-        G.ring[k] = null;
-        b.filled++; b.pending++;
-        G.boardT += BOARD_GAP;
-        G.particles.push({ x0: p.x, y0: p.y, bus: b, t: 0, color: b.color });
-        if (G.particles.length % 3 === 0) sound('pop');
+        const { b, k } = pick;
+        for (let j = 0; j < LANES; j++) {
+          const p = seatPoint(k + j);
+          G.ring[k + j] = null;
+          b.filled++; b.pending++;
+          G.particles.push({ x0: p.x, y0: p.y, bus: b, t: -j * 0.15, color: b.color });
+        }
+        G.boardT += BOARD_GAP * LANES;
+        sound('pop');
         updateProgress();
       } else { G.boardT = 0; break; }
     }
@@ -730,8 +729,8 @@
     G.checkT -= dt;
     if (G.checkT > 0) { if (G.stuckT > 0) G.stuckT += dt; return; }
     G.checkT = 0.25;
-    const canBoard = G.buses.some((b) => b.state === 'slot' && b.filled < b.cap && G.ring.includes(b.color));
-    const canFeed = G.queue.length > 0 && G.ring.some((c, k) => k % LANES === 0 && G.ring.slice(k, k + LANES).every((x) => x === null));
+    const canBoard = G.buses.some((b) => b.state === 'slot' && b.cap - b.filled >= LANES && G.ring.includes(b.color));
+    const canFeed = G.queue.length > 0 && G.ring.some((c, k) => k % LANES === 0 && c === null);
     let stuck = false;
     if (!canBoard && !canFeed) {
       if (freeSlot() < 0) stuck = true;
@@ -804,7 +803,7 @@
       ctx.beginPath(); ctx.moveTo(xh, 0); ctx.lineTo(xb, -5.5); ctx.lineTo(xb, 5.5); ctx.closePath(); ctx.fill();
     }
     if (mode === 'arrow' && !b.mystery) {
-      const x0 = -L * 0.26, x1 = L * 0.16, xh = L * 0.3;
+      const x0 = b.flip ? -L / 2 + 16 : -L * 0.26, x1 = L * 0.16, xh = L * 0.3;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       for (const [style, lw] of [['rgba(15,23,42,0.45)', 5.5], ['#fff', 3.2]]) {
         ctx.strokeStyle = style; ctx.fillStyle = style; ctx.lineWidth = lw;
@@ -817,6 +816,16 @@
       const frac = (b.filled - b.pending) / b.cap, inner = L - 13;
       ctx.fillStyle = 'rgba(15,23,42,0.12)'; rr(-L / 2 + 4, -W / 2 + 5, inner, W - 10, 3); ctx.fill();
       if (frac > 0) { ctx.fillStyle = col.d; rr(-L / 2 + 4, -W / 2 + 5, Math.max(4, inner * frac), W - 10, 3); ctx.fill(); }
+    }
+    if (b.flip && mode === 'arrow') {
+      // turn-around sign: a white disc with a circular arrow, on the back of the roof
+      const cx = -L / 2 + 8.5;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(15,23,42,0.45)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx, 0, 5.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#1e40af'; ctx.fillStyle = '#1e40af'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx, 0, 3.1, -Math.PI * 0.35, Math.PI * 1.25); ctx.stroke();
+      const ax = cx + 3.1 * Math.cos(-Math.PI * 0.35), ay = 3.1 * Math.sin(-Math.PI * 0.35);
+      ctx.beginPath(); ctx.moveTo(ax + 2.2, ay - 0.6); ctx.lineTo(ax - 1.2, ay - 2.2); ctx.lineTo(ax - 0.2, ay + 1.6); ctx.closePath(); ctx.fill();
     }
     if (b.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${b.flash * 2})`;
@@ -857,12 +866,16 @@
     ctx.strokeStyle = 'rgba(148,163,184,0.25)'; ctx.lineWidth = 1;
     for (let x = 0; x < cw; x += 28) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, crowdH); ctx.stroke(); }
     for (let y = 0; y < crowdH; y += 28) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
-    // Path the crowd stands on
+    // The two feeder lanes, running off the top of the screen
+    ctx.lineCap = 'butt';
+    for (const side of [0, 1]) {
+      const x = feedX(side);
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Q_ROW + 2;
+      ctx.beginPath(); ctx.moveTo(x, -4); ctx.lineTo(x, ringYT); ctx.stroke();
+      ctx.strokeStyle = side === activeFeed() || !G.queue.length ? '#a3adbf' : '#b4bccb'; ctx.lineWidth = Q_ROW - 3;
+      ctx.stroke();
+    }
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Q_ROW + 2;
-    ctx.beginPath(); qPath.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
-    ctx.strokeStyle = '#a3adbf'; ctx.lineWidth = Q_ROW - 3;
-    ctx.stroke();
     // Carousel belt with seat markers that show it turning
     const belt = () => {
       ctx.beginPath();
@@ -881,8 +894,6 @@
       const p = ringPoint(seatS(k));
       ctx.beginPath(); ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.fillStyle = '#facc15';
-    ctx.beginPath(); ctx.moveTo(ringXL - 6, ringYT - 19); ctx.lineTo(ringXL + 6, ringYT - 19); ctx.lineTo(ringXL, ringYT - 13); ctx.fill();
 
     // Station with bays
     ctx.fillStyle = '#5d6680'; ctx.fillRect(0, slotTop, cw, slotH);
@@ -913,14 +924,6 @@
     // Parking lot
     ctx.fillStyle = '#d3dbe7'; ctx.fillRect(0, lotTop - 6, cw, ch - lotTop + 6);
     for (const t of G.tunnels) drawTunnel(t);
-    if (G.flipAll) {
-      ctx.font = '800 12px -apple-system, sans-serif';
-      const txt = '🔄 Flip level: buses turn around when one leaves';
-      const w = ctx.measureText(txt).width + 16;
-      ctx.fillStyle = 'rgba(30,64,175,0.9)'; rr((cw - w) / 2, lotTop + 2, w, 20, 10); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(txt, cw / 2, lotTop + 12.5);
-    }
 
     // People riding the carousel
     for (let k = 0; k < G.ring.length; k++) {
@@ -928,21 +931,19 @@
       const p = seatPoint(k);
       drawPerson(p.x, p.y, G.ring[k], RING_SCALE);
     }
-    // Waiting line (back of line drawn first)
-    const visible = Math.min(G.queue.length, Math.floor(qLen / Q_SP - 1) * LANES);
-    for (let i = visible - 1; i >= 0; i--) {
-      const p = queueSpot(i);
-      if (p) drawPerson(p.x, p.y, G.queue[i], RING_SCALE);
+    // Feeder lines (back of each line drawn first). Only the front few rows
+    // show; the rest fade off the top of the screen.
+    const lines = [G.queue.slice(0, G.leftN), G.queue.slice(G.leftN)];
+    for (const side of [0, 1]) {
+      const line = lines[side], n = Math.min(line.length, (FEED_ROWS + 1) * LANES);
+      for (let i = n - 1; i >= 0; i--) {
+        const p = feedSpot(side, i);
+        if (p.y > -8) drawPerson(p.x, p.y, line[i], RING_SCALE);
+      }
     }
-    if (G.queue.length > visible) {
-      const p = qPath[qPath.length - 1];
-      const txt = `+${G.queue.length - visible}`;
-      ctx.font = '800 12px -apple-system, sans-serif';
-      const w = ctx.measureText(txt).width + 12;
-      ctx.fillStyle = 'rgba(15,23,42,0.75)'; rr(Math.min(cw - w - 4, Math.max(4, p[0] - w / 2)), p[1] - 9, w, 18, 9); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(txt, Math.min(cw - w / 2 - 4, Math.max(4 + w / 2, p[0])), p[1]);
-    }
+    const fade = ctx.createLinearGradient(0, 0, 0, feedTop * 0.6);
+    fade.addColorStop(0, 'rgba(231,236,243,1)'); fade.addColorStop(1, 'rgba(231,236,243,0)');
+    ctx.fillStyle = fade; ctx.fillRect(0, 0, cw, feedTop * 0.6);
 
     // Buses: parked first, moving ones on top
     for (const b of G.buses) if (b.state === 'lot') {
@@ -973,7 +974,7 @@
     }
     // Passengers hopping on
     for (const p of G.particles) {
-      const to = slotPose(p.bus.slot), t = easeInOut(Math.min(1, p.t));
+      const to = slotPose(p.bus.slot), t = easeInOut(Math.max(0, Math.min(1, p.t)));
       drawPerson(lerp(p.x0, to.x, t), lerp(p.y0, to.y, t) - Math.sin(Math.PI * t) * 18, p.color, RING_SCALE * (1 - t * 0.3));
     }
   }
