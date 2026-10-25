@@ -9,6 +9,7 @@
   const BAY_PRICES = { 5: 100, 6: 300, 7: 600 };
   const BOOSTER_PRICE = 50;
   const EXTRA_BAY_PRICE = 100;
+  const DEFUSE_PRICE = 100;
   const BUMP_DUR = 0.35, FLY_DUR = 0.4, LEAVE_DUR = 0.7, BOARD_GAP = 0.018;
   const RING_SPEED = 70;  // how fast the carousel turns (px/s)
   const LANES = 4;        // people come in groups of 4, standing side by side on the carousel
@@ -26,6 +27,7 @@
     { c: '#f8fafc', d: '#94a3b8', l: '#ffffff' }, // white
   ];
 
+  const COLOR_NAMES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan', 'brown', 'white'];
   const MYSTERY = { c: '#64748b', d: '#334155', l: '#94a3b8' };
   const $ = (s) => document.querySelector(s);
   const canvas = $('#game');
@@ -127,9 +129,10 @@
   // the carousel is smaller. u and v run from -1 to 1 across the block.
   const isHard = (n) => n >= 10 && n % 10 === 0;
   // Past level 45 the levels keep getting harder: more buses, a smaller
-  // carousel, more mystery buses and more mixed-up passenger lines.
-  // Returns 0 up to level 45, rising to 1 at level 75.
-  const late = (n) => Math.min(1, Math.max(0, (n - 45) / 30));
+  // carousel, more mystery buses and more mixed-up passenger lines. By level
+  // 100 there is almost no slack: one wrong bus fills a bay for good.
+  // Returns 0 up to level 45, rising to 1 at level 100.
+  const late = (n) => Math.min(1, Math.max(0, (n - 45) / 55));
   const SHAPES = [
     { name: 'ring', fill: 0.62, has: (u, v) => { const r = Math.hypot(u, v); return r > 0.42 && r < 1.08; } },
     { name: 'plus', fill: 0.62, has: (u, v) => Math.abs(u) < 0.4 || Math.abs(v) < 0.4 },
@@ -146,6 +149,10 @@
       flips: n >= 12 && n % 3 === 0 ? Math.min(0.5, 0.25 + (n - 12) * 0.008) : 0,
       tunnels: n >= 15 && n % 3 !== 0 ? (n >= 30 ? 2 : 1) : 0,  // flip levels have no tunnels
       shape: isHard(n) ? SHAPES[(n / 10 - 1) % SHAPES.length] : null,
+      ice: n >= 56 ? 0.08 + 0.07 * late(n) : 0,     // share of buses frozen until enough others leave
+      bombs: n >= 58 ? 0.05 + 0.2 * late(n) ** 2 : 0,   // share of buses that must leave within a number of moves
+      locks: n >= 60 ? 0.06 + 0.06 * late(n) : 0,   // share of buses locked until a bus of the key color leaves
+      cones: n >= 64 ? 2 + Math.round(4 * late(n)) : 0,  // fixed obstacles in the lot
     };
   }
   // Where the next bus out of a tunnel parks: right in front of its mouth
@@ -156,7 +163,7 @@
 
   // Later levels: buses packed tightly on a grid of 12-unit cells, arrows
   // along the grid. A bus is 2 cells wide and 3, 4 or 5 cells long.
-  function packGrid(n, target, rng, nTunnels, tunnels, shape) {
+  function packGrid(n, target, rng, nTunnels, tunnels, shape, nCones) {
     const C = 12, ri = (k) => Math.floor(rng() * k);
     // Size the block so the buses fill most of it
     const area = (target * 8.4) / 0.82 / (shape ? shape.fill : 1), aspect = LW / LH;
@@ -198,6 +205,16 @@
       for (let i = 0; i < more; i++) t.queue.push({ cap, len: cells * C - 2 });
       tunnels.push(t);
       buses.push(first);
+    }
+
+    // Traffic cones: one cell each, never move. They sit with the tunnels so
+    // they count as obstacles everywhere.
+    for (let tries = 0, placed = 0; placed < nCones && tries < 300; tries++) {
+      const gx = ri(cols), gy = ri(rows);
+      if (!isFree(gx, gy, 1, 1)) continue;
+      take(gx, gy, 1, 1);
+      tunnels.push({ x: ox + (gx + 0.5) * C, y: oy + (gy + 0.5) * C, ang: 0, len: 10, wid: 10, cone: true, queue: [] });
+      placed++;
     }
 
     for (let tries = 0; buses.length < target && tries < 12000; tries++) {
@@ -259,7 +276,7 @@
       const L = buildLevel(n, attempt, levelFeatures(n));
       if (L) return L;
     }
-    return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0, shape: null });
+    return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0 });
   }
 
   function buildLevel(n, attempt, feats) {
@@ -269,7 +286,7 @@
     const target = packed ? Math.min(8 + n, 50 + Math.round(14 * late(n))) : 5 + Math.floor(n * 1.15);
     const nc = Math.min(2 + Math.floor((n + 2) / 3), COLORS.length, target);
     const tunnels = [];
-    const buses = packed ? packGrid(n, target, rng, feats.tunnels, tunnels, feats.shape) : [];
+    const buses = packed ? packGrid(n, target, rng, feats.tunnels, tunnels, feats.shape, feats.cones) : [];
     for (let tries = 0; !packed && buses.length < target && tries < 4000; tries++) {
       const cap = rng() < 0.42 ? 16 : n >= 4 && rng() < 0.28 ? 40 : 24;
       const len = BUS_LEN[cap];
@@ -321,7 +338,22 @@
       const j = ri(i + 1);
       [cols[i], cols[j]] = [cols[j], cols[i]];
     }
-    order.forEach((b, i) => (b.color = cols[i]));
+    order.forEach((b, i) => { b.color = cols[i]; b.seq = i; });  // seq: place in a known winning order
+    // Ice, bombs and locks only go on buses that start in the lot, and only ask
+    // for what the winning order already gives them: an ice count no bigger
+    // than the number of buses that leave before it, a bomb count bigger than
+    // that (by less and less slack as levels go on), and a key color that some
+    // earlier bus in the order has.
+    const inLot = new Set(buses);
+    order.forEach((b, i) => {
+      if (!inLot.has(b)) return;
+      if (i >= 3 && i <= 24 && rng() < feats.ice) b.ice = Math.min(12, i - ri(Math.ceil(i / 2)));
+      else if (i >= 1 && i <= 14 + Math.round(46 * late(n)) && rng() < feats.bombs) b.bomb = i + 1 + ri(4 - Math.round(3 * late(n)));
+      else if (i >= 2 && rng() < feats.locks) {
+        const keys = order.slice(Math.max(0, i - 6), i).map((o) => o.color).filter((c) => c !== b.color);
+        if (keys.length) b.lock = keys[ri(keys.length)];
+      }
+    });
 
     // Passenger line
     const K = n < 6 ? 2 : n < 15 ? 3 : 4;
@@ -333,12 +365,12 @@
         open.push({ color: b.color, need: b.cap });
       }
       if (!open.length) break;
-      let i = rng() < 0.65 - 0.2 * late(n) ? 0 : ri(open.length);
+      let i = rng() < 0.65 - 0.4 * late(n) ? 0 : ri(open.length);
       // Same-colored buses fill oldest first, matching how boarding works in play
       i = open.findIndex((o) => o.color === open[i].color);
       const s = open[i];
       // Passengers arrive in clumps of one color, sometimes a whole busload
-      const run = rng() < 0.4 - 0.2 * late(n) ? s.need : LANES * (1 + ri(Math.min(s.need / LANES, 6)));
+      const run = rng() < 0.4 - 0.3 * late(n) ? s.need : LANES * (1 + ri(Math.min(s.need / LANES, 6 - Math.round(4 * late(n)))));
       for (let r = 0; r < run; r++) queue.push(s.color);
       s.need -= run;
       if (s.need <= 0) open.splice(i, 1);
@@ -436,7 +468,7 @@
   const bays = () => Math.min(MAX_BAYS, save.bays + G.tempBays);
 
   // The carousel gets smaller as levels go on, which is what makes them harder
-  const ringSeats = (n) => LANES * Math.round((n < 5 ? 36 : Math.max(16 - Math.round(6 * late(n)), 32 - Math.floor(n / 2))) * (isHard(n) ? 0.8 : 1));
+  const ringSeats = (n) => LANES * Math.round((n < 5 ? 36 : Math.max(16 - Math.round(8 * late(n)), 32 - Math.floor(n / 2))) * (isHard(n) ? 0.8 : 1));
 
   function startLevel() {
     const L = genLevel(save.level);
@@ -504,7 +536,23 @@
       seen.flip = true;
       notes.push('<li><b>Flip buses 🔄</b> carry a turn-around sign. They turn around each time any bus leaves the lot.</li>');
     }
-    if (G.tunnels.length && !seen.tunnel) {
+    if (G.buses.some((b) => b.ice) && !seen.ice) {
+      seen.ice = true;
+      notes.push('<li><b>Ice buses 🧊</b> are frozen. The number counts down each time a bus leaves the lot, and at zero the ice melts.</li>');
+    }
+    if (G.buses.some((b) => b.bomb) && !seen.bomb) {
+      seen.bomb = true;
+      notes.push('<li><b>Bomb buses 💣</b> count down each time another bus leaves the lot. Get them out before they hit zero!</li>');
+    }
+    if (G.buses.some((b) => b.lock != null) && !seen.lock) {
+      seen.lock = true;
+      notes.push('<li><b>Locked buses 🔒</b> open when a bus the color of the padlock leaves the lot.</li>');
+    }
+    if (G.tunnels.some((t) => t.cone) && !seen.cone) {
+      seen.cone = true;
+      notes.push('<li><b>Traffic cones</b> never move. Find a way around them.</li>');
+    }
+    if (G.tunnels.some((t) => !t.cone) && !seen.tunnel) {
       seen.tunnel = true;
       notes.push('<li><b>Tunnels</b> send out a new bus whenever the spot in front of them is clear. The number shows how many are left inside.</li>');
     }
@@ -590,6 +638,14 @@
     if (!b) return;
     G.failDismissed = false;
 
+    if (b.ice > 0) {
+      toast(`Frozen! ${b.ice} more bus${b.ice > 1 ? 'es' : ''} must leave first`);
+      b.shake = 0.3; sound('bump'); return;
+    }
+    if (b.lock != null) {
+      toast(`Locked: a ${COLOR_NAMES[b.lock]} bus must leave first`);
+      b.shake = 0.3; sound('bump'); return;
+    }
     if (G.vipMode) {
       if (G.slots[0]) { toast('The VIP bay is busy'); return; }
       G.vipMode = false;
@@ -617,7 +673,14 @@
     if (direct) { b.from = lotPose(b); b.state = 'flying'; b.t = 0; }
     else { b.state = 'exiting'; b.ex = 0; }
     // Flip buses turn around whenever a bus leaves the lot
-    for (const o of lotBuses()) if (o.flip) { o.ang += Math.PI; o.flipT = 0.3; }
+    for (const o of lotBuses()) {
+      if (o === b) continue;
+      if (o.flip) { o.ang += Math.PI; o.flipT = 0.3; }
+      // Ice melts a little, and the key opens locks of its color
+      if (o.ice > 0) { o.ice--; if (!o.ice) o.flash = 0.4; }
+      if (o.lock === b.color) { o.lock = null; o.flash = 0.4; }
+      if (o.bomb > 0 && !--o.bomb && !G.boom) { G.boom = o; setTimeout(() => showBoom(o), 450); }
+    }
     revealFree();
     sound('go');
   }
@@ -678,6 +741,8 @@
       let pick = null;
       for (const b of G.buses) {
         if (b.state !== 'slot' || b.cap - b.filled < LANES) continue;
+        // Buses of the same color fill in the order they arrived
+        if (G.buses.some((o) => o !== b && o.state === 'slot' && o.color === b.color && o.cap - o.filled >= LANES && o.arrive < b.arrive)) continue;
         const to = slotPose(b.slot), tx = Math.max(ringXL - ringR * 0.7, Math.min(ringXR + ringR * 0.7, to.x));
         for (let k = 0; k < G.ring.length; k += LANES) {
           if (rowColor(k) !== b.color || !nearBays(seatS(k))) continue;
@@ -740,7 +805,7 @@
       if (freeSlot() < 0) stuck = true;
       else {
         const obs = obstacles();
-        stuck = !lotBuses().some((b) => !pathHit(b, obs));
+        stuck = !lotBuses().some((b) => !b.ice && b.lock == null && !pathHit(b, obs));
       }
     }
     if (stuck) {
@@ -802,7 +867,7 @@
       // a big "?" with just the arrowhead, so the direction still shows
       ctx.fillStyle = '#fff'; ctx.font = '900 14px -apple-system, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.save(); ctx.translate(-L * 0.08, 0); ctx.rotate(-pose.ang); ctx.fillText('?', 0, 1); ctx.restore();
+      ctx.save(); ctx.translate(b.flip ? L * 0.06 : -L * 0.08, 0); ctx.rotate(-pose.ang); ctx.fillText('?', 0, 1); ctx.restore();
       const xh = L * 0.36, xb = L * 0.2;
       ctx.beginPath(); ctx.moveTo(xh, 0); ctx.lineTo(xb, -5.5); ctx.lineTo(xb, 5.5); ctx.closePath(); ctx.fill();
     }
@@ -830,6 +895,44 @@
       ctx.beginPath(); ctx.arc(cx, 0, 3.1, -Math.PI * 0.35, Math.PI * 1.25); ctx.stroke();
       const ax = cx + 3.1 * Math.cos(-Math.PI * 0.35), ay = 3.1 * Math.sin(-Math.PI * 0.35);
       ctx.beginPath(); ctx.moveTo(ax + 2.2, ay - 0.6); ctx.lineTo(ax - 1.2, ay - 2.2); ctx.lineTo(ax - 0.2, ay + 1.6); ctx.closePath(); ctx.fill();
+    }
+    if (mode === 'arrow' && b.ice > 0) {
+      // block of ice with the count on top
+      ctx.fillStyle = 'rgba(186,230,253,0.55)'; rr(-L / 2 - 2, -W / 2 - 2, L + 4, W + 4, 7); ctx.fill();
+      ctx.strokeStyle = '#f0f9ff'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-L / 2 + 3, -W / 2 + 6); ctx.lineTo(-L / 2 + 9, -W / 2 + 1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(L / 2 - 9, W / 2 - 1); ctx.lineTo(L / 2 - 3, W / 2 - 6); ctx.stroke();
+      ctx.save(); ctx.rotate(-pose.ang);
+      ctx.font = '900 13px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#0369a1'; ctx.strokeText(String(b.ice), 0, 1);
+      ctx.fillStyle = '#fff'; ctx.fillText(String(b.ice), 0, 1);
+      ctx.restore();
+    }
+    if (mode === 'arrow' && b.bomb > 0) {
+      // bomb with a lit fuse and the moves left, drawn upright
+      const hot = b.bomb <= 2 ? 0.5 + 0.5 * Math.sin(clock * 12) : 0;
+      ctx.save(); ctx.rotate(-pose.ang);
+      ctx.strokeStyle = '#78350f'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(4, -5); ctx.quadraticCurveTo(7, -9, 9, -8); ctx.stroke();
+      ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(9, -8, 1.8 + hot, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgb(${17 + 200 * hot},24,39)`; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.font = '900 10px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff'; ctx.fillText(String(b.bomb), 0, 0.8);
+      ctx.restore();
+    }
+    if (mode === 'arrow' && b.lock != null) {
+      // padlock in the key color, drawn upright
+      const k = COLORS[b.lock];
+      ctx.save(); ctx.rotate(-pose.ang);
+      ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2.6;
+      ctx.beginPath(); ctx.arc(0, -2, 3.6, Math.PI, 0); ctx.lineTo(3.6, 1); ctx.moveTo(-3.6, 1); ctx.lineTo(-3.6, -2); ctx.stroke();
+      ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = k.c; ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.3;
+      rr(-6, 0, 12, 9, 2.5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#1e293b'; ctx.beginPath(); ctx.arc(0, 4, 1.4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     }
     if (b.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${b.flash * 2})`;
@@ -860,6 +963,17 @@
       ctx.fillStyle = '#fff'; ctx.font = '900 9px -apple-system, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(t.queue.length), x, y + 0.5);
     }
+  }
+
+  function drawCone(t) {
+    ctx.save();
+    ctx.translate(lotX + t.x * ls, lotY + t.y * ls); ctx.scale(ls, ls);
+    ctx.fillStyle = 'rgba(15,23,42,0.22)'; rr(-5, -3.5, 11, 11, 2); ctx.fill();
+    ctx.fillStyle = '#1f2937'; rr(-6, -6, 12, 12, 2); ctx.fill();     // square base
+    ctx.fillStyle = '#f97316'; ctx.beginPath(); ctx.arc(0, 0, 5.2, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(0, 0, 2.8, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#fdba74'; ctx.beginPath(); ctx.arc(0, 0, 1.2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   let clock = 0;
@@ -927,7 +1041,7 @@
 
     // Parking lot
     ctx.fillStyle = '#d3dbe7'; ctx.fillRect(0, lotTop - 6, cw, ch - lotTop + 6);
-    for (const t of G.tunnels) drawTunnel(t);
+    for (const t of G.tunnels) (t.cone ? drawCone : drawTunnel)(t);
 
     // People riding the carousel
     for (let k = 0; k < G.ring.length; k++) {
@@ -1141,6 +1255,23 @@
         restart: () => { closeModal(); startLevel(); },
       },
       () => { G.failDismissed = true; G.stuckT = 0; });
+  }
+
+  // A bomb bus ran out of moves. Defusing it gives a few more moves.
+  function showBoom(b) {
+    if (G.won || b.state !== 'lot') { G.boom = null; return; }
+    b.shake = 0.6; sound('fail');
+    showModal(`<div class="big">💥</div><h2>Boom!</h2>
+      <p>A bomb bus ran out of moves before it got out of the lot.</p>
+      <button class="btn gold" data-a="defuse" ${save.coins < DEFUSE_PRICE ? 'disabled' : ''}>Defuse it: 3 more moves · ${DEFUSE_PRICE} 🪙</button>
+      <button class="btn" data-a="restart">Try again</button>`,
+      {
+        defuse: () => {
+          save.coins -= DEFUSE_PRICE; persist();
+          b.bomb = 3; b.flash = 0.4; G.boom = null; closeModal(); updateHUD();
+        },
+        restart: () => { closeModal(); startLevel(); },
+      });
   }
 
   function openShop() {

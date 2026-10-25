@@ -20,9 +20,13 @@ Special pieces show up as you go:
 - **Flip buses (every third level from 12)** carry a turn-around sign and turn around each time any bus leaves the lot.
 - **Tunnels (level 15+)** release a new bus whenever the spot in front of them is clear. The badge shows how many are left inside.
 
+- **Ice buses (from level 56)** are frozen. The number counts down each time a bus leaves the lot.
+- **Bomb buses (from level 58)** count down each time another bus leaves. Get them out before they hit zero, or defuse one for 100 coins.
+- **Locked buses (from level 60)** open when a bus the color of the padlock leaves the lot.
+- **Traffic cones (from level 64)** never move.
 - **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
 
-Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up. Its shape changes from level to level, from round to long and flat. Past level 45 levels keep getting harder up to level 75: more buses, a smaller carousel, more mystery buses and a more mixed-up line.
+Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up. Its shape changes from level to level, from round to long and flat. Past level 45 levels keep getting harder up to level 100: more buses, a smaller carousel, more special buses and a more mixed-up line. By level 100 one wrong move almost always loses.
 
 ## No ads, no pay-to-win
 
@@ -63,7 +67,7 @@ python3 -m http.server 8123
 - `sw.js`: offline cache. Bump `VERSION` when shipping changes so installed copies update
 - `tools/autoplay.js`: Playwright bot that plays levels 1-50 to check difficulty
 
-Levels are generated from the level number, so the same level is always the same layout. The generator only keeps a layout once it has found an order that clears the lot (following flip buses and tunnels), then builds the passenger line from that order, so every level is solvable.
+Levels are generated from the level number, so the same level is always the same layout. The generator only keeps a layout once it has found an order that clears the lot (following flip buses and tunnels), then builds the passenger line from that order, so every level is solvable with 4 bays and no boosters. Buses of the same color fill in the order they arrived, which is what keeps that true.
 
 Deployed with GitHub Pages from the `main` branch.
 
