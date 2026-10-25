@@ -22,7 +22,7 @@ Special pieces show up as you go:
 
 - **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
 
-Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up. Its shape changes from level to level, from round to long and flat.
+Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up. Its shape changes from level to level, from round to long and flat. Past level 45 levels keep getting harder up to level 75: more buses, a smaller carousel, more mystery buses and a more mixed-up line.
 
 ## No ads, no pay-to-win
 

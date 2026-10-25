@@ -126,6 +126,10 @@
   // Every 10th level is a HARD level: the buses are packed into a shape and
   // the carousel is smaller. u and v run from -1 to 1 across the block.
   const isHard = (n) => n >= 10 && n % 10 === 0;
+  // Past level 45 the levels keep getting harder: more buses, a smaller
+  // carousel, more mystery buses and more mixed-up passenger lines.
+  // Returns 0 up to level 45, rising to 1 at level 75.
+  const late = (n) => Math.min(1, Math.max(0, (n - 45) / 30));
   const SHAPES = [
     { name: 'ring', fill: 0.62, has: (u, v) => { const r = Math.hypot(u, v); return r > 0.42 && r < 1.08; } },
     { name: 'plus', fill: 0.62, has: (u, v) => Math.abs(u) < 0.4 || Math.abs(v) < 0.4 },
@@ -137,7 +141,7 @@
   const TUNNEL = 22;      // a tunnel is a 2x2-cell block in the lot
   function levelFeatures(n) {
     return {
-      mystery: n >= 8 ? Math.min(0.35, 0.1 + (n - 8) * 0.01) : 0,   // share of buses hiding their color
+      mystery: n >= 8 ? Math.min(0.35, 0.1 + (n - 8) * 0.01) + 0.15 * late(n) : 0,   // share of buses hiding their color
       // share of buses that turn around whenever any bus leaves (flip levels only)
       flips: n >= 12 && n % 3 === 0 ? Math.min(0.5, 0.25 + (n - 12) * 0.008) : 0,
       tunnels: n >= 15 && n % 3 !== 0 ? (n >= 30 ? 2 : 1) : 0,  // flip levels have no tunnels
@@ -262,7 +266,7 @@
     const rng = mulberry32(n * 7919 + 13 + attempt * 104729);
     const ri = (k) => Math.floor(rng() * k);
     const packed = n > 4;
-    const target = packed ? Math.min(8 + n, 50) : 5 + Math.floor(n * 1.15);
+    const target = packed ? Math.min(8 + n, 50 + Math.round(14 * late(n))) : 5 + Math.floor(n * 1.15);
     const nc = Math.min(2 + Math.floor((n + 2) / 3), COLORS.length, target);
     const tunnels = [];
     const buses = packed ? packGrid(n, target, rng, feats.tunnels, tunnels, feats.shape) : [];
@@ -329,12 +333,12 @@
         open.push({ color: b.color, need: b.cap });
       }
       if (!open.length) break;
-      let i = rng() < 0.65 ? 0 : ri(open.length);
+      let i = rng() < 0.65 - 0.2 * late(n) ? 0 : ri(open.length);
       // Same-colored buses fill oldest first, matching how boarding works in play
       i = open.findIndex((o) => o.color === open[i].color);
       const s = open[i];
       // Passengers arrive in clumps of one color, sometimes a whole busload
-      const run = rng() < 0.4 ? s.need : LANES * (1 + ri(Math.min(s.need / LANES, 6)));
+      const run = rng() < 0.4 - 0.2 * late(n) ? s.need : LANES * (1 + ri(Math.min(s.need / LANES, 6)));
       for (let r = 0; r < run; r++) queue.push(s.color);
       s.need -= run;
       if (s.need <= 0) open.splice(i, 1);
@@ -432,7 +436,7 @@
   const bays = () => Math.min(MAX_BAYS, save.bays + G.tempBays);
 
   // The carousel gets smaller as levels go on, which is what makes them harder
-  const ringSeats = (n) => LANES * Math.round((n < 5 ? 36 : Math.max(16, 32 - Math.floor(n / 2))) * (isHard(n) ? 0.8 : 1));
+  const ringSeats = (n) => LANES * Math.round((n < 5 ? 36 : Math.max(16 - Math.round(6 * late(n)), 32 - Math.floor(n / 2))) * (isHard(n) ? 0.8 : 1));
 
   function startLevel() {
     const L = genLevel(save.level);
