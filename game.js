@@ -14,17 +14,18 @@
   const RING_SPEED = 70;  // how fast the carousel turns (px/s)
   const LANES = 4;        // people come in groups of 4, standing side by side on the carousel
 
+  // Bright, well separated colors: c body, d outline/shade, l highlight
   const COLORS = [
-    { c: '#ef4444', d: '#b91c1c', l: '#fca5a5' }, // red
-    { c: '#3b82f6', d: '#1d4ed8', l: '#93c5fd' }, // blue
-    { c: '#22c55e', d: '#15803d', l: '#86efac' }, // green
-    { c: '#facc15', d: '#ca8a04', l: '#fef08a' }, // yellow
-    { c: '#a855f7', d: '#7e22ce', l: '#d8b4fe' }, // purple
-    { c: '#f97316', d: '#c2410c', l: '#fdba74' }, // orange
-    { c: '#ec4899', d: '#be185d', l: '#f9a8d4' }, // pink
-    { c: '#22d3ee', d: '#0891b2', l: '#a5f3fc' }, // cyan
-    { c: '#9a5b2e', d: '#5f3519', l: '#d6a77a' }, // brown
-    { c: '#f8fafc', d: '#94a3b8', l: '#ffffff' }, // white
+    { c: '#ff2e2e', d: '#c10f12', l: '#ff9b96' }, // red
+    { c: '#1f6bff', d: '#123fc4', l: '#94b6ff' }, // blue
+    { c: '#1fd655', d: '#0e9437', l: '#97f2b1' }, // green
+    { c: '#ffd60a', d: '#cc9a00', l: '#fff28a' }, // yellow
+    { c: '#a63cff', d: '#6b16c7', l: '#d8adff' }, // purple
+    { c: '#ff8a00', d: '#c45a00', l: '#ffc47a' }, // orange
+    { c: '#ff47b5', d: '#c4157e', l: '#ffadde' }, // pink
+    { c: '#14e0f0', d: '#0798ab', l: '#a3f7fc' }, // cyan
+    { c: '#9b5a24', d: '#5e3312', l: '#dba06c' }, // brown
+    { c: '#ffffff', d: '#8e9bb0', l: '#ffffff' }, // white
   ];
 
   const COLOR_NAMES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan', 'brown', 'white'];
@@ -382,14 +383,16 @@
   let dpr = 1, cw = 0, ch = 0, crowdH = 0, slotTop = 0, slotH = 0;
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
   let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1, feedTop = 0;
-  const Q_SP = 12, Q_ROW = 30, RING_SCALE = 0.56, LANE_W = 6.4;  // the line moves 4 abreast, Q_SP apart
+  const Q_SP = 13, RING_SCALE = 0.86, LANE_W = 10;  // people walk 4 abreast, rows Q_SP apart
+  const BELT_W = LANES * LANE_W + 4;                // width of the carousel belt and the chutes
+  const ROW_SP = 15;                                 // carousel length per row of seats
   const FEED_ROWS = 5;    // rows of each feeder line you can see; the rest is off screen
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, 3);
     cw = canvas.clientWidth; ch = canvas.clientHeight;
     canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
-    crowdH = Math.round(Math.max(150, Math.min(ch * 0.3, 240)));
+    crowdH = Math.round(Math.max(170, Math.min(ch * 0.32, 260)));
     slotTop = crowdH; slotH = 92;
     lotTop = slotTop + slotH + 6;
     const lotH = ch - lotTop - 6, lotW = cw - 12;
@@ -407,25 +410,57 @@
   // coming down into its top corners. Its size follows the number of rows it
   // holds, and its shape (round or long and flat) changes from level to level.
   function ringLayout() {
-    feedTop = FEED_ROWS * Q_SP + 10;
-    ringYB = crowdH - 18;
-    const rows = G.ring.length / LANES, maxR = Math.max(14, (ringYB - feedTop) / 2);
-    ringR = Math.max(14, Math.min(maxR * [1, 0.72, 0.5][save.level % 3], (rows * 14 * 0.6) / (2 * Math.PI)));
-    const maxL1 = cw - 2 * (16 + ringR);
-    const L1 = Math.max(48, Math.min(maxL1, (rows * 14 - 2 * Math.PI * ringR) / 2));
+    feedTop = FEED_ROWS * Q_SP + 14;
+    ringYB = crowdH - BELT_W / 2 - 6;
+    const minR = BELT_W / 2 + 6;
+    const rows = G.ring.length / LANES, maxR = Math.max(minR, (ringYB - feedTop - BELT_W / 2) / 2);
+    ringR = Math.max(minR, Math.min(maxR * [1, 0.72, 0.5][save.level % 3], (rows * ROW_SP * 0.6) / (2 * Math.PI)));
+    const maxL1 = cw - 2 * (8 + ringR + BELT_W / 2);
+    const L1 = Math.max(BELT_W + 22, Math.min(maxL1, (rows * ROW_SP - 2 * Math.PI * ringR) / 2));
     ringYT = ringYB - 2 * ringR;
     ringXL = (cw - L1) / 2; ringXR = ringXL + L1;
     ringLen = 2 * L1 + 2 * Math.PI * ringR;
+    // The chutes: each comes down from off the top of the screen in a sweeping
+    // curve and drops straight onto the belt at one of its top corners.
+    // Stored as points from the belt end outwards, with distance along the way.
+    chutes = [0, 1].map((side) => {
+      const ex = side ? ringXR : ringXL, ey = ringYT - BELT_W / 2 + 2;
+      const sx = Math.max(BELT_W / 2 + 4, Math.min(cw - BELT_W / 2 - 4, ex + (side ? 1 : -1) * Math.min(90, cw * 0.22)));
+      const h = ey + 40;
+      const P = [[ex, ey], [ex, ey - h * 0.5], [sx, ey - h * 0.45], [sx, -40]];
+      const pts = [];
+      let d = 0, prev = null;
+      for (let i = 0; i <= 80; i++) {
+        const t = i / 80, u = 1 - t;
+        const x = u * u * u * P[0][0] + 3 * u * u * t * P[1][0] + 3 * u * t * t * P[2][0] + t * t * t * P[3][0];
+        const y = u * u * u * P[0][1] + 3 * u * u * t * P[1][1] + 3 * u * t * t * P[2][1] + t * t * t * P[3][1];
+        if (prev) d += Math.hypot(x - prev.x, y - prev.y);
+        prev = { x, y, d };
+        pts.push(prev);
+      }
+      return pts;
+    });
+  }
+  let chutes = [[], []];
+  // Point on a chute, d measured from where it meets the belt, with the
+  // direction people walk there (towards the belt)
+  function chutePoint(side, d) {
+    const pts = chutes[side];
+    let i = 1;
+    while (i < pts.length - 1 && pts[i].d < d) i++;
+    const a = pts[i - 1], b = pts[i], f = Math.max(0, Math.min(1.5, (d - a.d) / ((b.d - a.d) || 1)));
+    const l = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, tx: (a.x - b.x) / l, ty: (a.y - b.y) / l };
   }
   // Two feeder lines: the left one empties into the carousel first, then the right.
   // G.leftN people at the front of G.queue are in the left line.
-  const feedX = (side) => (side ? ringXR : ringXL);
   const activeFeed = () => (G.leftN > 0 ? 0 : 1);
   // Person i of a feeder line, standing in groups of LANES across it
   function feedSpot(side, i) {
     const shift = side === activeFeed() ? G.shift / LANES : 0;
-    const y = ringYT - 14 - (Math.floor(i / LANES) + shift) * Q_SP;
-    return { x: feedX(side) + ((i % LANES) - (LANES - 1) / 2) * LANE_W, y };
+    const p = chutePoint(side, Q_SP * 0.6 + (Math.floor(i / LANES) + shift) * Q_SP);
+    const off = ((i % LANES) - (LANES - 1) / 2) * LANE_W;
+    return { x: p.x - p.ty * off, y: p.y + p.tx * off };
   }
   // Point on the carousel, s measured clockwise from the entrance (top left)
   function ringPoint(s) {
@@ -478,7 +513,7 @@
       queue: L.queue.slice(), total: L.queue.length,
       slots: new Array(8).fill(null), tempBays: 0, arrivals: 0,
       shift: 0, boardT: 0, particles: [], vipMode: false,
-      ring: new Array(ringSeats(save.level)).fill(null), ringOff: 0,
+      ring: new Array(ringSeats(save.level)).fill(null), ringOff: 0, enter: {},
       modal: false, won: false, stuckT: 0, checkT: 0, failDismissed: false,
     };
     // The carousel starts full; the left feeder line holds the first half of the rest
@@ -719,6 +754,7 @@
 
     // Carousel turns; an empty row passing the entrance takes the next group of 4
     G.shift = Math.max(0, G.shift - dt * 40);
+    for (const k in G.enter) if ((G.enter[k].t += dt / 0.3) >= 1) delete G.enter[k];
     const prevOff = G.ringOff;
     // Tapping the crowd speeds the carousel up for a moment
     G.boostT = Math.max(0, (G.boostT || 0) - dt);
@@ -728,7 +764,11 @@
       const a = Math.floor((seatBase(k) + prevOff - s0) / ringLen), b = Math.floor((seatBase(k) + G.ringOff - s0) / ringLen);
       if (a === b || !G.queue.length) continue;
       if (G.ring[k] !== null) continue;
-      for (let j = 0; j < LANES && G.queue.length; j++) G.ring[k + j] = G.queue.shift();
+      const side = activeFeed();
+      for (let j = 0; j < LANES && G.queue.length; j++) {
+        G.enter[k + j] = { ...feedSpot(side, j), t: 0 };  // walks from the front of the chute to its seat
+        G.ring[k + j] = G.queue.shift();
+      }
       G.leftN = Math.max(0, G.leftN - LANES);
       G.shift += LANES;
     }
@@ -829,10 +869,13 @@
     const col = COLORS[color];
     ctx.fillStyle = 'rgba(0,0,0,0.15)';
     ctx.beginPath(); ctx.ellipse(x + 1, y + 3 * s, 5.5 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
+    // round body, head on top, and a shine on the head
     ctx.fillStyle = col.c; ctx.strokeStyle = col.d; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(x, y, 6 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = col.l;
-    ctx.beginPath(); ctx.arc(x, y - 2.5 * s, 3.4 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - 2.6 * s, 3.7 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.beginPath(); ctx.arc(x - 1.2 * s, y - 3.8 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
   }
 
   function drawBus(b, pose, mode) {
@@ -984,16 +1027,16 @@
     ctx.strokeStyle = 'rgba(148,163,184,0.25)'; ctx.lineWidth = 1;
     for (let x = 0; x < cw; x += 28) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, crowdH); ctx.stroke(); }
     for (let y = 0; y < crowdH; y += 28) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
-    // The two feeder lanes, running off the top of the screen
-    ctx.lineCap = 'butt';
+    // The two chutes, curving in from off the top of the screen
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
     for (const side of [0, 1]) {
-      const x = feedX(side);
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Q_ROW + 2;
-      ctx.beginPath(); ctx.moveTo(x, -4); ctx.lineTo(x, ringYT); ctx.stroke();
-      ctx.strokeStyle = side === activeFeed() || !G.queue.length ? '#a3adbf' : '#b4bccb'; ctx.lineWidth = Q_ROW - 3;
-      ctx.stroke();
+      ctx.beginPath();
+      chutes[side].forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y + 4)));
+      ctx.strokeStyle = 'rgba(15,23,42,0.12)'; ctx.lineWidth = BELT_W + 12; ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = BELT_W + 8; ctx.stroke();
+      ctx.strokeStyle = side === activeFeed() || !G.queue.length ? '#9aa6bb' : '#b4bccb'; ctx.lineWidth = BELT_W; ctx.stroke();
     }
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     // Carousel belt with seat markers that show it turning
     const belt = () => {
       ctx.beginPath();
@@ -1004,8 +1047,9 @@
       ctx.closePath();
     };
     ctx.fillStyle = '#c7d7c0'; belt(); ctx.fill();
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = LANES * LANE_W + 9; belt(); ctx.stroke();
-    ctx.strokeStyle = '#8f9ab0'; ctx.lineWidth = LANES * LANE_W + 4; ctx.stroke();
+    ctx.strokeStyle = 'rgba(15,23,42,0.12)'; ctx.lineWidth = BELT_W + 12; belt(); ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = BELT_W + 8; ctx.stroke();
+    ctx.strokeStyle = '#8f9ab0'; ctx.lineWidth = BELT_W; ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     for (let k = 0; k < G.ring.length; k++) {
       if (k % LANES) continue;
@@ -1043,11 +1087,15 @@
     ctx.fillStyle = '#d3dbe7'; ctx.fillRect(0, lotTop - 6, cw, ch - lotTop + 6);
     for (const t of G.tunnels) (t.cone ? drawCone : drawTunnel)(t);
 
-    // People riding the carousel
+    // People riding the carousel, bobbing as they march; new arrivals walk in
+    // from the chute
+    const walk = G.boostT > 0 ? 22 : 13;
     for (let k = 0; k < G.ring.length; k++) {
       if (G.ring[k] === null) continue;
-      const p = seatPoint(k);
-      drawPerson(p.x, p.y, G.ring[k], RING_SCALE);
+      let p = seatPoint(k);
+      const e = G.enter[k];
+      if (e) { const t = easeInOut(e.t); p = { x: lerp(e.x, p.x, t), y: lerp(e.y, p.y, t) - Math.sin(Math.PI * e.t) * 3 }; }
+      drawPerson(p.x, p.y - Math.abs(Math.sin(clock * walk + k * 1.7)) * 1.6, G.ring[k], RING_SCALE);
     }
     // Feeder lines (back of each line drawn first). Only the front few rows
     // show; the rest fade off the top of the screen.
@@ -1056,7 +1104,8 @@
       const line = lines[side], n = Math.min(line.length, (FEED_ROWS + 1) * LANES);
       for (let i = n - 1; i >= 0; i--) {
         const p = feedSpot(side, i);
-        if (p.y > -8) drawPerson(p.x, p.y, line[i], RING_SCALE);
+        const bob = side === activeFeed() && G.shift > 0 ? Math.abs(Math.sin(clock * 16 + i * 1.7)) * 1.6 : 0;
+        if (p.y > -10) drawPerson(p.x, p.y - bob, line[i], RING_SCALE);
       }
     }
     const fade = ctx.createLinearGradient(0, 0, 0, feedTop * 0.6);
