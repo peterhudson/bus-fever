@@ -16,7 +16,7 @@ const { chromium, devices } = require('playwright');
         if (G.won) { result = 'win'; break; }
         if (G.boom) { result = 'boom'; break; }
           if (G.modal) { result = 'stuck'; document.getElementById('modal').hidden = true; G.modal = false; break; }
-        const busy = G.buses.some(x => x.state === 'exiting' || x.state === 'flying' || (x.state === 'lot' && x.bumpT > 0));
+        const busy = G.buses.some(x => x.state === 'exiting' || x.state === 'driving' || x.state === 'flying' || (x.state === 'lot' && x.bumpT > 0));
         if (busy || B.freeSlot() < 0) continue;
         const lot = B.lotBuses(); if (!lot.length) continue;
         const next = lot.reduce((a, x) => (x.seq < a.seq ? x : a));

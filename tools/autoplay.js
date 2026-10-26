@@ -21,7 +21,7 @@ const { chromium, devices } = require('playwright');
         if (G.won) { result = 'win'; break; }
         if (G.boom) { result = 'stuck'; break; }
         if (G.modal) { result = 'stuck'; document.getElementById('modal').hidden = true; G.modal = false; break; }
-        const busy = G.particles.length || G.buses.some(x => x.state==='exiting'||x.state==='flying'||(x.state==='lot'&&x.bumpT>0));
+        const busy = G.particles.length || G.buses.some(x => x.state==='exiting'||x.state==='driving'||x.state==='flying'||(x.state==='lot'&&x.bumpT>0));
         if (busy || B.freeSlot() < 0) continue;
         // demand: colors in queue order not covered by bay capacity
         const cover = {}; for (const x of G.buses) if (x.state==='slot') cover[x.color]=(cover[x.color]||0)+x.cap-x.filled;

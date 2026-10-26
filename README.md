@@ -24,7 +24,10 @@ Special pieces show up as you go:
 - **Bomb buses (from level 58)** count down each time another bus leaves. Get them out before they hit zero, or defuse one for 100 coins.
 - **Locked buses (from level 60)** open when a bus the color of the padlock leaves the lot.
 - **Traffic cones (from level 64)** never move.
+- **Gates (from level 70)** sit in the lot like cones but open and close as buses leave. An N-gate is shut for N moves, then open for N moves. The badge counts the moves until it changes. Gates only go where the winning order finds them open.
 - **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
+
+Each level is set somewhere people line up for buses, from 12 themes that repeat: stadium, county fair, music festival, airport, factory, train station, ferry port, school, beach, ski resort, theme park and downtown.
 
 Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up. Its shape changes from level to level, from round to long and flat. Past level 45 levels keep getting harder up to level 100: more buses, a smaller carousel, more special buses and a more mixed-up line. By level 100 one wrong move almost always loses.
 
@@ -64,6 +67,7 @@ python3 -m http.server 8123
 
 - `index.html`: page, HUD and styles
 - `game.js`: level generator, game logic and canvas rendering
+- `scenery.js`: the level themes and the parking lot background
 - `sw.js`: offline cache. Bump `VERSION` when shipping changes so installed copies update
 - `tools/autoplay.js`: Playwright bot that plays levels 1-50 to check difficulty
 

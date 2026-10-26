@@ -14,17 +14,18 @@
   const RING_SPEED = 70;  // how fast the carousel turns (px/s)
   const LANES = 4;        // people come in groups of 4, standing side by side on the carousel
 
+  // Bright, well separated colors: c body, d outline/shade, l highlight
   const COLORS = [
-    { c: '#ef4444', d: '#b91c1c', l: '#fca5a5' }, // red
-    { c: '#3b82f6', d: '#1d4ed8', l: '#93c5fd' }, // blue
-    { c: '#22c55e', d: '#15803d', l: '#86efac' }, // green
-    { c: '#facc15', d: '#ca8a04', l: '#fef08a' }, // yellow
-    { c: '#a855f7', d: '#7e22ce', l: '#d8b4fe' }, // purple
-    { c: '#f97316', d: '#c2410c', l: '#fdba74' }, // orange
-    { c: '#ec4899', d: '#be185d', l: '#f9a8d4' }, // pink
-    { c: '#22d3ee', d: '#0891b2', l: '#a5f3fc' }, // cyan
-    { c: '#9a5b2e', d: '#5f3519', l: '#d6a77a' }, // brown
-    { c: '#f8fafc', d: '#94a3b8', l: '#ffffff' }, // white
+    { c: '#ff2e2e', d: '#c10f12', l: '#ff9b96' }, // red
+    { c: '#1f6bff', d: '#123fc4', l: '#94b6ff' }, // blue
+    { c: '#1fd655', d: '#0e9437', l: '#97f2b1' }, // green
+    { c: '#ffd60a', d: '#cc9a00', l: '#fff28a' }, // yellow
+    { c: '#a63cff', d: '#6b16c7', l: '#d8adff' }, // purple
+    { c: '#ff8a00', d: '#c45a00', l: '#ffc47a' }, // orange
+    { c: '#ff47b5', d: '#c4157e', l: '#ffadde' }, // pink
+    { c: '#14e0f0', d: '#0798ab', l: '#a3f7fc' }, // cyan
+    { c: '#9b5a24', d: '#5e3312', l: '#dba06c' }, // brown
+    { c: '#ffffff', d: '#8e9bb0', l: '#ffffff' }, // white
   ];
 
   const COLOR_NAMES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan', 'brown', 'white'];
@@ -153,6 +154,7 @@
       bombs: n >= 58 ? 0.05 + 0.2 * late(n) ** 2 : 0,   // share of buses that must leave within a number of moves
       locks: n >= 60 ? 0.06 + 0.06 * late(n) : 0,   // share of buses locked until a bus of the key color leaves
       cones: n >= 64 ? 2 + Math.round(4 * late(n)) : 0,  // fixed obstacles in the lot
+      gates: n >= 70 ? 1 + (n >= 82) + (n >= 94) : 0,   // barriers that open and close every few moves
     };
   }
   // Where the next bus out of a tunnel parks: right in front of its mouth
@@ -237,7 +239,53 @@
       take(gx, gy, w, h);
       buses.push(nb);
     }
+    // the empty cells left over, where gates can go
+    buses.free = [];
+    for (let yy = 0; yy < rows; yy++) for (let xx = 0; xx < cols; xx++) if (!used[yy * cols + xx]) buses.free.push([ox + (xx + 0.5) * C, oy + (yy + 0.5) * C]);
     return buses;
+  }
+
+  // Gates sit on empty cells. Gate n is shut for n moves, then open for n
+  // moves, and so on; phase shifts where in that cycle it starts. Moves are
+  // counted as buses leave the lot. Replay the winning order to see which
+  // move sends a bus through each empty cell, and only put a gate where it is
+  // open at every one of those moves, so the winning order still works.
+  const gateOpen = (t, moves) => Math.floor((moves + t.phase) / t.gate) % 2 === 1;
+  function placeGates(buses, tunnels, order, count, rng) {
+    const cells = buses.free.map(([x, y]) => ({ x, y, ang: 0, len: 10, wid: 10, hits: [], dirs: [] }));
+    const lot = buses.map((b) => ({ ...b, ref: b }));
+    const tq = tunnels.map((t) => t.queue.slice());
+    for (let i = 0; i < order.length; i++) {
+      const b = lot.find((o) => o.ref === order[i]);
+      if (!b) return;
+      for (const c of cells) if (pathHit(b, [c])) { c.hits.push(i); c.dirs.push(b.ang); }
+      lot.splice(lot.indexOf(b), 1);
+      for (const o of lot) if (o.flip) o.ang += Math.PI;
+      tunnels.forEach((t, k) => {
+        if (!tq[k].length) return;
+        const m = tunnelMouth(t, tq[k][0].len);
+        if (lot.some((o) => obbOverlap(m, o))) return;
+        const spec = tq[k].shift();
+        lot.push({ ...m, flip: spec.flip, ref: spec });
+      });
+    }
+    // busier cells first, then try the gate sizes in a random order
+    const cand = cells.filter((c) => c.hits.length).sort((a, c) => c.hits.length - a.hits.length + (rng() - 0.5) * 2);
+    let placed = 0;
+    for (const c of cand) {
+      if (placed >= count) break;
+      if (tunnels.some((t) => t.gate && Math.hypot(t.x - c.x, t.y - c.y) < 40)) continue;
+      const fits = [];
+      for (const n of [1, 2, 3]) for (let ph = 0; ph < 2 * n; ph++) {
+        const g = { gate: n, phase: ph };
+        if (c.hits.every((i) => gateOpen(g, i))) fits.push(g);
+      }
+      if (!fits.length) continue;
+      const g = fits[Math.floor(rng() * fits.length)];
+      // the barrier arm lies across the way the first bus through it goes
+      tunnels.push({ x: c.x, y: c.y, ang: 0, len: 10, wid: 10, cone: true, gate: g.gate, phase: g.phase, arm: c.dirs[0] + Math.PI / 2, lift: 0, queue: [] });
+      placed++;
+    }
   }
 
   // Clears the lot in a random order that the rules allow, turning buses
@@ -276,7 +324,7 @@
       const L = buildLevel(n, attempt, levelFeatures(n));
       if (L) return L;
     }
-    return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0 });
+    return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0, gates: 0 });
   }
 
   function buildLevel(n, attempt, feats) {
@@ -355,6 +403,8 @@
       }
     });
 
+    if (feats.gates && buses.free) placeGates(buses, tunnels, order, feats.gates, rng);
+
     // Passenger line
     const K = n < 6 ? 2 : n < 15 ? 3 : 4;
     const open = [], queue = [];
@@ -381,51 +431,120 @@
   // ---------- Layout ----------
   let dpr = 1, cw = 0, ch = 0, crowdH = 0, slotTop = 0, slotH = 0;
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
+  const ROAD = 16, CURB = 2, LOT_PAD = 3;   // road width, curb, asphalt beyond the lot's play area
+  let road = { x0: 0, x1: 0, y0: 0, y1: 0 };  // the road's center line around the lot
+  let asphalt = { x: 0, y: 0, w: 0, h: 0 };
   let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1, feedTop = 0;
-  const Q_SP = 12, Q_ROW = 30, RING_SCALE = 0.56, LANE_W = 6.4;  // the line moves 4 abreast, Q_SP apart
+  const Q_SP = 13, RING_SCALE = 0.86, LANE_W = 10;  // people walk 4 abreast, rows Q_SP apart
+  const BELT_W = LANES * LANE_W + 4;                // width of the carousel belt and the chutes
+  const ROW_SP = 15;                                 // carousel length per row of seats
   const FEED_ROWS = 5;    // rows of each feeder line you can see; the rest is off screen
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, 3);
     cw = canvas.clientWidth; ch = canvas.clientHeight;
     canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
-    crowdH = Math.round(Math.max(150, Math.min(ch * 0.3, 240)));
-    slotTop = crowdH; slotH = 92;
-    lotTop = slotTop + slotH + 6;
-    const lotH = ch - lotTop - 6, lotW = cw - 12;
-    ls = Math.min(lotW / LW, lotH / LH);
-    lotX = 6 + (lotW - LW * ls) / 2;
-    lotY = lotTop + (lotH - LH * ls) / 2;
+    crowdH = Math.round(Math.max(170, Math.min(ch * 0.32, 260)));
+    slotTop = crowdH; slotH = 60;
+    // The road runs round the screen's edges below the bays and the asphalt
+    // fills everything inside it. The lot's play area is centred on it.
+    const e = ROAD / 2, in_ = ROAD + CURB + LOT_PAD;
+    road = { x0: e, x1: cw - e, y0: slotTop + slotH + e, y1: ch - e };
+    asphalt = { x: ROAD + CURB, y: slotTop + slotH + ROAD + CURB, w: cw - 2 * (ROAD + CURB), h: ch - slotTop - slotH - 2 * (ROAD + CURB) };
+    lotTop = slotTop + slotH + in_;
     slotW = Math.min(44, (cw - 20 - slotGap * 7) / 8);
     slotX0 = (cw - (slotW * 8 + slotGap * 7)) / 2;
-    slotScale = Math.min((slotH - 36) / BUS_LEN[40], (slotW - 8) / BUS_W);
+    slotScale = Math.min((slotH - 12) / BUS_LEN[40], (slotW - 8) / BUS_W);
 
-    if (G) ringLayout();
+    if (G) { fitLot(); ringLayout(); }
+  }
+  // Zoom the lot so this level's buses fill the asphalt. The box is taken
+  // once at the start of a level so the view doesn't move while playing.
+  function fitLot() {
+    const in_ = ROAD + CURB + LOT_PAD, W = cw - 2 * in_, H = ch - lotTop - in_;
+    const B = (G && G.box) || { x0: 0, y0: 0, x1: LW, y1: LH };
+    ls = Math.min(W / (B.x1 - B.x0), H / (B.y1 - B.y0), 1.7);
+    lotX = cw / 2 - ((B.x0 + B.x1) / 2) * ls;
+    lotY = lotTop + H / 2 - ((B.y0 + B.y1) / 2) * ls;
+  }
+  function levelBox() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const add = (pts) => pts.forEach(([x, y]) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); });
+    G.buses.forEach((b) => add(corners(b.x, b.y, b.ang, b.len, BUS_W)));
+    G.tunnels.forEach((t) => add(corners(t.x, t.y, t.ang, t.len, t.wid)));
+    const m = 8;
+    return { x0: Math.max(0, x0 - m), y0: Math.max(0, y0 - m), x1: Math.min(LW, x1 + m), y1: Math.min(LH, y1 + m) };
   }
 
   // Carousel: a stadium-shaped loop just above the bays, with two feeder lines
   // coming down into its top corners. Its size follows the number of rows it
   // holds, and its shape (round or long and flat) changes from level to level.
   function ringLayout() {
-    feedTop = FEED_ROWS * Q_SP + 10;
-    ringYB = crowdH - 18;
-    const rows = G.ring.length / LANES, maxR = Math.max(14, (ringYB - feedTop) / 2);
-    ringR = Math.max(14, Math.min(maxR * [1, 0.72, 0.5][save.level % 3], (rows * 14 * 0.6) / (2 * Math.PI)));
-    const maxL1 = cw - 2 * (16 + ringR);
-    const L1 = Math.max(48, Math.min(maxL1, (rows * 14 - 2 * Math.PI * ringR) / 2));
+    feedTop = FEED_ROWS * Q_SP + 14;
+    ringYB = crowdH - BELT_W / 2 - 6;
+    const minR = BELT_W / 2 + 6;
+    const rows = G.ring.length / LANES, maxR = Math.max(minR, (ringYB - feedTop - BELT_W / 2) / 2);
+    ringR = Math.max(minR, Math.min(maxR * [1, 0.72, 0.5][save.level % 3], (rows * ROW_SP * 0.6) / (2 * Math.PI)));
+    const maxL1 = cw - 2 * (8 + ringR + BELT_W / 2);
+    const L1 = Math.max(BELT_W + 22, Math.min(maxL1, (rows * ROW_SP - 2 * Math.PI * ringR) / 2));
     ringYT = ringYB - 2 * ringR;
     ringXL = (cw - L1) / 2; ringXR = ringXL + L1;
     ringLen = 2 * L1 + 2 * Math.PI * ringR;
+    // The chutes: each comes down from off the top of the screen in a sweeping
+    // curve and drops straight onto the belt at one of its top corners.
+    // Stored as points from the belt end outwards, with distance along the way.
+    chutes = [0, 1].map((side) => {
+      const ex = side ? ringXR : ringXL, ey = ringYT - BELT_W / 2 + 2;
+      const sx = Math.max(BELT_W / 2 + 4, Math.min(cw - BELT_W / 2 - 4, ex + (side ? 1 : -1) * Math.min(90, cw * 0.22)));
+      const h = ey + 40;
+      const P = [[ex, ey], [ex, ey - h * 0.5], [sx, ey - h * 0.45], [sx, -40]];
+      const pts = [];
+      let d = 0, prev = null;
+      for (let i = 0; i <= 80; i++) {
+        const t = i / 80, u = 1 - t;
+        const x = u * u * u * P[0][0] + 3 * u * u * t * P[1][0] + 3 * u * t * t * P[2][0] + t * t * t * P[3][0];
+        const y = u * u * u * P[0][1] + 3 * u * u * t * P[1][1] + 3 * u * t * t * P[2][1] + t * t * t * P[3][1];
+        if (prev) d += Math.hypot(x - prev.x, y - prev.y);
+        prev = { x, y, d };
+        pts.push(prev);
+      }
+      return pts;
+    });
+    paintScenery();
+  }
+  let chutes = [[], []];
+
+  // The scenery behind everything is painted once per level and screen size
+  const bg = document.createElement('canvas');
+  function paintScenery() {
+    bg.width = canvas.width; bg.height = canvas.height;
+    const c = bg.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    window.Scenery.paint(c, {
+      cw, ch, crowdH, slotTop, slotH, level: save.level, road, roadW: ROAD, curb: CURB, asphalt,
+      lot: { x: lotX, y: lotY, w: LW * ls, h: LH * ls },
+      ring: { xl: ringXL, xr: ringXR, yt: ringYT, yb: ringYB, r: ringR, belt: BELT_W },
+    });
+  }
+  // Point on a chute, d measured from where it meets the belt, with the
+  // direction people walk there (towards the belt)
+  function chutePoint(side, d) {
+    const pts = chutes[side];
+    let i = 1;
+    while (i < pts.length - 1 && pts[i].d < d) i++;
+    const a = pts[i - 1], b = pts[i], f = Math.max(0, Math.min(1.5, (d - a.d) / ((b.d - a.d) || 1)));
+    const l = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, tx: (a.x - b.x) / l, ty: (a.y - b.y) / l };
   }
   // Two feeder lines: the left one empties into the carousel first, then the right.
   // G.leftN people at the front of G.queue are in the left line.
-  const feedX = (side) => (side ? ringXR : ringXL);
   const activeFeed = () => (G.leftN > 0 ? 0 : 1);
   // Person i of a feeder line, standing in groups of LANES across it
   function feedSpot(side, i) {
     const shift = side === activeFeed() ? G.shift / LANES : 0;
-    const y = ringYT - 14 - (Math.floor(i / LANES) + shift) * Q_SP;
-    return { x: feedX(side) + ((i % LANES) - (LANES - 1) / 2) * LANE_W, y };
+    const p = chutePoint(side, Q_SP * 0.6 + (Math.floor(i / LANES) + shift) * Q_SP);
+    const off = ((i % LANES) - (LANES - 1) / 2) * LANE_W;
+    return { x: p.x - p.ty * off, y: p.y + p.tx * off };
   }
   // Point on the carousel, s measured clockwise from the entrance (top left)
   function ringPoint(s) {
@@ -460,7 +579,7 @@
   }
 
   function slotRect(i) {
-    return { x: slotX0 + i * (slotW + slotGap), y: slotTop + 8, w: slotW, h: slotH - 34 };
+    return { x: slotX0 + i * (slotW + slotGap), y: slotTop + 5, w: slotW, h: slotH - 10 };
   }
 
   // ---------- Game state ----------
@@ -478,24 +597,29 @@
       queue: L.queue.slice(), total: L.queue.length,
       slots: new Array(8).fill(null), tempBays: 0, arrivals: 0,
       shift: 0, boardT: 0, particles: [], vipMode: false,
-      ring: new Array(ringSeats(save.level)).fill(null), ringOff: 0,
+      ring: new Array(ringSeats(save.level)).fill(null), ringOff: 0, enter: {},
       modal: false, won: false, stuckT: 0, checkT: 0, failDismissed: false,
     };
     // The carousel starts full; the left feeder line holds the first half of the rest
     for (let k = 0; k < G.ring.length && G.queue.length; k++) G.ring[k] = G.queue.shift();
     G.leftN = LANES * Math.ceil(G.queue.length / LANES / 2);
+    for (const t of G.tunnels) if (t.gate) t.lift = gateOpen(t, 0) ? 1 : 0;
+    G.box = levelBox();
+    fitLot();
     ringLayout();
     revealFree();
     updateHUD();
     introduceNewPieces();
-    if (isHard(save.level) && !G.modal) toast('HARD level! Double coins if you clear it 💪', 2200);
+    const theme = window.Scenery.themeFor(save.level);
+    if (isHard(save.level) && !G.modal) toast(`${theme.icon} ${theme.name}: HARD level! Double coins if you clear it 💪`, 2400);
+    else if (!G.modal) toast(`${theme.icon} ${theme.name}`, 1400);
   }
   function makeBus(b, id) {
     return { ...b, id, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0, flipT: 0, emergeT: 0 };
   }
 
   // Obstacles in the lot: parked buses and tunnels
-  const obstacles = () => lotBuses().concat(G.tunnels);
+  const obstacles = () => lotBuses().concat(G.tunnels.filter((t) => !t.gate || !gateOpen(t, G.arrivals)));
 
   // A mystery bus shows its color once nothing blocks its way out
   function revealFree() {
@@ -548,7 +672,11 @@
       seen.lock = true;
       notes.push('<li><b>Locked buses 🔒</b> open when a bus the color of the padlock leaves the lot.</li>');
     }
-    if (G.tunnels.some((t) => t.cone) && !seen.cone) {
+    if (G.tunnels.some((t) => t.gate) && !seen.gate) {
+      seen.gate = true;
+      notes.push('<li><b>Gates 🚧</b> open and close as buses leave the lot. The number shows how many more moves until it changes.</li>');
+    }
+    if (G.tunnels.some((t) => t.cone && !t.gate) && !seen.cone) {
       seen.cone = true;
       notes.push('<li><b>Traffic cones</b> never move. Find a way around them.</li>');
     }
@@ -586,6 +714,52 @@
     const r = slotRect(i);
     return { x: r.x + r.w / 2, y: r.y + r.h / 2, ang: -Math.PI / 2, s: slotScale };
   }
+  // The way a bus drives to its bay: straight on until it reaches the road,
+  // round the road (whichever way is shorter) to the top, along the top to
+  // below its bay, then up into the bay. Screen coordinates.
+  function buildRoute(b) {
+    const p = lotPose(b, b.ex), dx = Math.cos(b.ang), dy = Math.sin(b.ang);
+    const { x0, x1, y0, y1 } = road, W = x1 - x0, H = y1 - y0, P = 2 * (W + H);
+    // where the bus meets the road going straight on
+    let t = Infinity;
+    if (dx > 1e-6) t = Math.min(t, (x1 - p.x) / dx);
+    if (dx < -1e-6) t = Math.min(t, (x0 - p.x) / dx);
+    if (dy > 1e-6) t = Math.min(t, (y1 - p.y) / dy);
+    if (dy < -1e-6) t = Math.min(t, (y0 - p.y) / dy);
+    if (!isFinite(t) || t < 0) t = 0;
+    const hx = Math.max(x0, Math.min(x1, p.x + dx * t)), hy = Math.max(y0, Math.min(y1, p.y + dy * t));
+    // positions along the road, clockwise from the top left corner
+    const along = (x, y) => (Math.abs(y - y0) < 0.5 ? x - x0 : Math.abs(x - x1) < 0.5 ? W + (y - y0) : Math.abs(y - y1) < 0.5 ? W + H + (x1 - x) : 2 * W + H + (y1 - y));
+    const at = (u) => {
+      u = ((u % P) + P) % P;
+      if (u <= W) return [x0 + u, y0];
+      if (u <= W + H) return [x1, y0 + u - W];
+      if (u <= 2 * W + H) return [x1 - (u - W - H), y1];
+      return [x0, y1 - (u - 2 * W - H)];
+    };
+    const bay = slotPose(b.slot), tx = Math.max(x0, Math.min(x1, bay.x));
+    const u0 = along(hx, hy), u1 = tx - x0;
+    const cw2 = (((u1 - u0) % P) + P) % P, ccw = P - cw2, dir = cw2 <= ccw ? 1 : -1, len = Math.min(cw2, ccw);
+    const pts = [[p.x, p.y], [hx, hy]];
+    const corners = [0, W, W + H, 2 * W + H];
+    // corners passed on the way, in order
+    const passed = corners.map((c) => ({ c, d: dir > 0 ? (((c - u0) % P) + P) % P : (((u0 - c) % P) + P) % P })).filter((o) => o.d > 0.5 && o.d < len - 0.5).sort((a, c) => a.d - c.d);
+    for (const o of passed) pts.push(at(o.c));
+    pts.push([tx, y0]);
+    if (tx !== bay.x) pts.push([bay.x, y0]);   // the top road runs the full width
+    pts.push([bay.x, bay.y]);
+    const route = [];
+    let d = 0;
+    pts.forEach(([x, y], i) => { if (i) d += Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]); route.push({ x, y, d }); });
+    return route;
+  }
+  function routePoint(route, d) {
+    let i = 1;
+    while (i < route.length - 1 && route[i].d < d) i++;
+    const a = route[i - 1], c = route[i], f = Math.max(0, Math.min(1, (d - a.d) / ((c.d - a.d) || 1)));
+    return { x: a.x + (c.x - a.x) * f, y: a.y + (c.y - a.y) * f };
+  }
+
   function poseOf(b) {
     switch (b.state) {
       case 'lot': return lotPose(b);
@@ -594,6 +768,14 @@
         const to = slotPose(b.slot), t = easeInOut(Math.min(1, b.t));
         return { x: lerp(b.from.x, to.x, t), y: lerp(b.from.y, to.y, t) - Math.sin(Math.PI * t) * 20,
           ang: lerpAngle(b.from.ang, to.ang, t), s: lerp(b.from.s, to.s, t) };
+      }
+      case 'driving': {
+        const R = b.route, end = R[R.length - 1].d, d = Math.min(b.dist, end);
+        const p = routePoint(R, d), a = routePoint(R, Math.max(0, d - 7)), c = routePoint(R, Math.min(end, d + 7));
+        const ang = c.x === a.x && c.y === a.y ? -Math.PI / 2 : Math.atan2(c.y - a.y, c.x - a.x);
+        // shrink to bay size on the last stretch up into the bay
+        const last = end - R[R.length - 2].d, f = Math.max(0, Math.min(1, 1 - (end - d) / (last || 1)));
+        return { x: p.x, y: p.y, ang, s: lerp(ls, slotScale, f) };
       }
       case 'slot': return slotPose(b.slot);
       case 'leaving': {
@@ -688,6 +870,7 @@
   // ---------- Update ----------
   function update(dt) {
     if (!G) return;
+    for (const t of G.tunnels) if (t.gate) t.lift += ((gateOpen(t, G.arrivals) ? 1 : 0) - t.lift) * Math.min(1, dt * 9);
     for (const b of G.buses) {
       if (b.shake > 0) b.shake = Math.max(0, b.shake - dt);
       if (b.flash > 0) b.flash = Math.max(0, b.flash - dt);
@@ -700,12 +883,19 @@
         case 'exiting': {
           b.ex += (300 + b.ex * 4) * dt;
           const x = b.x + Math.cos(b.ang) * b.ex, y = b.y + Math.sin(b.ang) * b.ex;
-          if (outOfLot(b.len, x, y) || b.ex > 500) {
-            b.from = lotPose(b, b.ex);
-            b.state = 'flying'; b.t = 0;
+          // once its middle is past the lot's edge it heads for the road
+          const sx = lotX + x * ls, sy = lotY + y * ls;
+          if (sx < asphalt.x || sx > asphalt.x + asphalt.w || sy < asphalt.y || sy > asphalt.y + asphalt.h || b.ex > 1500) {
+            b.route = buildRoute(b);
+            b.state = 'driving'; b.dist = 0; b.v = 300 + b.ex;
           }
           break;
         }
+        case 'driving':
+          b.v = Math.min(900, b.v + 1400 * dt);
+          b.dist += b.v * dt;
+          if (b.dist >= b.route[b.route.length - 1].d) { b.state = 'slot'; b.t = 0; }
+          break;
         case 'flying':
           b.t += dt / FLY_DUR;
           if (b.t >= 1) { b.state = 'slot'; b.t = 0; }
@@ -719,6 +909,7 @@
 
     // Carousel turns; an empty row passing the entrance takes the next group of 4
     G.shift = Math.max(0, G.shift - dt * 40);
+    for (const k in G.enter) if ((G.enter[k].t += dt / 0.3) >= 1) delete G.enter[k];
     const prevOff = G.ringOff;
     // Tapping the crowd speeds the carousel up for a moment
     G.boostT = Math.max(0, (G.boostT || 0) - dt);
@@ -728,7 +919,11 @@
       const a = Math.floor((seatBase(k) + prevOff - s0) / ringLen), b = Math.floor((seatBase(k) + G.ringOff - s0) / ringLen);
       if (a === b || !G.queue.length) continue;
       if (G.ring[k] !== null) continue;
-      for (let j = 0; j < LANES && G.queue.length; j++) G.ring[k + j] = G.queue.shift();
+      const side = activeFeed();
+      for (let j = 0; j < LANES && G.queue.length; j++) {
+        G.enter[k + j] = { ...feedSpot(side, j), t: 0 };  // walks from the front of the chute to its seat
+        G.ring[k + j] = G.queue.shift();
+      }
       G.leftN = Math.max(0, G.leftN - LANES);
       G.shift += LANES;
     }
@@ -793,7 +988,7 @@
     const waiting = G.queue.length > 0 || G.ring.some((c) => c !== null);
     if (G.won || G.modal || G.failDismissed || !waiting) { G.stuckT = 0; return; }
     const busy = G.particles.length || G.shift > 0.05 ||
-      G.buses.some((b) => b.state === 'exiting' || b.state === 'flying' || (b.state === 'lot' && b.bumpT > 0));
+      G.buses.some((b) => b.state === 'exiting' || b.state === 'driving' || b.state === 'flying' || (b.state === 'lot' && b.bumpT > 0));
     if (busy) { G.stuckT = 0; return; }
     G.checkT -= dt;
     if (G.checkT > 0) { if (G.stuckT > 0) G.stuckT += dt; return; }
@@ -829,10 +1024,13 @@
     const col = COLORS[color];
     ctx.fillStyle = 'rgba(0,0,0,0.15)';
     ctx.beginPath(); ctx.ellipse(x + 1, y + 3 * s, 5.5 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
+    // round body, head on top, and a shine on the head
     ctx.fillStyle = col.c; ctx.strokeStyle = col.d; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(x, y, 6 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = col.l;
-    ctx.beginPath(); ctx.arc(x, y - 2.5 * s, 3.4 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - 2.6 * s, 3.7 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.beginPath(); ctx.arc(x - 1.2 * s, y - 3.8 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
   }
 
   function drawBus(b, pose, mode) {
@@ -976,24 +1174,49 @@
     ctx.restore();
   }
 
+  // A barrier arm across a cell, raised when open. The badge counts the moves
+  // until it changes.
+  function drawGate(t) {
+    const open = gateOpen(t, G.arrivals);
+    const left = t.gate - ((G.arrivals + t.phase) % t.gate);
+    ctx.save();
+    ctx.translate(lotX + t.x * ls, lotY + t.y * ls); ctx.scale(ls * 1.6, ls * 1.6);
+    ctx.fillStyle = open ? 'rgba(22,163,74,0.75)' : 'rgba(220,38,38,0.8)'; rr(-6, -6, 12, 12, 2.5); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.save();
+    ctx.rotate(t.arm);
+    ctx.fillStyle = '#1f2937';
+    ctx.beginPath(); ctx.arc(-6.5, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(6.5, 0, 1.6, 0, Math.PI * 2); ctx.fill();
+    // the arm swings up from its post at -6.5
+    // raised, it points up at you, so from above it looks short
+    ctx.translate(-6.5, 0); ctx.scale(1 - t.lift * 0.75, 1);
+    ctx.fillStyle = '#fff'; rr(0, -1.8, 13.5, 3.6, 1.5); ctx.fill();
+    ctx.fillStyle = '#ef4444';
+    for (let x = 1.5; x < 13; x += 4) ctx.fillRect(x, -1.8, 2, 3.6);
+    ctx.restore();
+    ctx.fillStyle = open ? '#16a34a' : '#dc2626';
+    ctx.beginPath(); ctx.arc(5.5, -5.5, 4.4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = '900 6.5px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(left), 5.5, -5.2);
+    ctx.restore();
+  }
+
   let clock = 0;
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Plaza where the crowd waits
-    ctx.fillStyle = '#e7ecf3'; ctx.fillRect(0, 0, cw, crowdH);
-    ctx.strokeStyle = 'rgba(148,163,184,0.25)'; ctx.lineWidth = 1;
-    for (let x = 0; x < cw; x += 28) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, crowdH); ctx.stroke(); }
-    for (let y = 0; y < crowdH; y += 28) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
-    // The two feeder lanes, running off the top of the screen
-    ctx.lineCap = 'butt';
+    // Scenery: the themed plaza where the crowd waits, and the parking lot
+    ctx.drawImage(bg, 0, 0, cw, ch);
+    // The two chutes, curving in from off the top of the screen
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
     for (const side of [0, 1]) {
-      const x = feedX(side);
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Q_ROW + 2;
-      ctx.beginPath(); ctx.moveTo(x, -4); ctx.lineTo(x, ringYT); ctx.stroke();
-      ctx.strokeStyle = side === activeFeed() || !G.queue.length ? '#a3adbf' : '#b4bccb'; ctx.lineWidth = Q_ROW - 3;
-      ctx.stroke();
+      ctx.beginPath();
+      chutes[side].forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y + 4)));
+      ctx.strokeStyle = 'rgba(15,23,42,0.12)'; ctx.lineWidth = BELT_W + 12; ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = BELT_W + 8; ctx.stroke();
+      ctx.strokeStyle = side === activeFeed() || !G.queue.length ? '#9aa6bb' : '#b4bccb'; ctx.lineWidth = BELT_W; ctx.stroke();
     }
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     // Carousel belt with seat markers that show it turning
     const belt = () => {
       ctx.beginPath();
@@ -1004,8 +1227,9 @@
       ctx.closePath();
     };
     ctx.fillStyle = '#c7d7c0'; belt(); ctx.fill();
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = LANES * LANE_W + 9; belt(); ctx.stroke();
-    ctx.strokeStyle = '#8f9ab0'; ctx.lineWidth = LANES * LANE_W + 4; ctx.stroke();
+    ctx.strokeStyle = 'rgba(15,23,42,0.12)'; ctx.lineWidth = BELT_W + 12; belt(); ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = BELT_W + 8; ctx.stroke();
+    ctx.strokeStyle = '#8f9ab0'; ctx.lineWidth = BELT_W; ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     for (let k = 0; k < G.ring.length; k++) {
       if (k % LANES) continue;
@@ -1039,15 +1263,18 @@
       }
     }
 
-    // Parking lot
-    ctx.fillStyle = '#d3dbe7'; ctx.fillRect(0, lotTop - 6, cw, ch - lotTop + 6);
-    for (const t of G.tunnels) (t.cone ? drawCone : drawTunnel)(t);
+    // Parking lot pieces
+    for (const t of G.tunnels) if (!t.gate) (t.cone ? drawCone : drawTunnel)(t);
 
-    // People riding the carousel
+    // People riding the carousel, bobbing as they march; new arrivals walk in
+    // from the chute
+    const walk = G.boostT > 0 ? 22 : 13;
     for (let k = 0; k < G.ring.length; k++) {
       if (G.ring[k] === null) continue;
-      const p = seatPoint(k);
-      drawPerson(p.x, p.y, G.ring[k], RING_SCALE);
+      let p = seatPoint(k);
+      const e = G.enter[k];
+      if (e) { const t = easeInOut(e.t); p = { x: lerp(e.x, p.x, t), y: lerp(e.y, p.y, t) - Math.sin(Math.PI * e.t) * 3 }; }
+      drawPerson(p.x, p.y - Math.abs(Math.sin(clock * walk + k * 1.7)) * 1.6, G.ring[k], RING_SCALE);
     }
     // Feeder lines (back of each line drawn first). Only the front few rows
     // show; the rest fade off the top of the screen.
@@ -1056,12 +1283,13 @@
       const line = lines[side], n = Math.min(line.length, (FEED_ROWS + 1) * LANES);
       for (let i = n - 1; i >= 0; i--) {
         const p = feedSpot(side, i);
-        if (p.y > -8) drawPerson(p.x, p.y, line[i], RING_SCALE);
+        const bob = side === activeFeed() && G.shift > 0 ? Math.abs(Math.sin(clock * 16 + i * 1.7)) * 1.6 : 0;
+        if (p.y < -10) continue;
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.y / (feedTop * 0.5)));  // fade out up the chute
+        drawPerson(p.x, p.y - bob, line[i], RING_SCALE);
+        ctx.globalAlpha = 1;
       }
     }
-    const fade = ctx.createLinearGradient(0, 0, 0, feedTop * 0.6);
-    fade.addColorStop(0, 'rgba(231,236,243,1)'); fade.addColorStop(1, 'rgba(231,236,243,0)');
-    ctx.fillStyle = fade; ctx.fillRect(0, 0, cw, feedTop * 0.6);
 
     // Buses: parked first, moving ones on top
     for (const b of G.buses) if (b.state === 'lot') {
@@ -1074,21 +1302,23 @@
         ctx.restore();
       }
     }
+    // Gates on top of parked buses so they are easy to spot
+    for (const t of G.tunnels) if (t.gate) drawGate(t);
     for (const b of G.buses) {
       if (b.state === 'slot' || b.state === 'leaving') drawBus(b, poseOf(b), 'seats');
     }
     for (const b of G.buses) {
-      if (b.state === 'exiting' || b.state === 'flying') drawBus(b, poseOf(b), b.state === 'flying' && b.t > 0.5 ? 'seats' : 'arrow');
+      if (b.state === 'exiting' || b.state === 'driving' || b.state === 'flying') drawBus(b, poseOf(b), (b.state === 'flying' && b.t > 0.5) || (b.state === 'driving' && b.dist > b.route[b.route.length - 2].d) ? 'seats' : 'arrow');
     }
     // Seats-left badges under bays
     for (const b of G.buses) {
       if (b.state !== 'slot') continue;
       const r = slotRect(b.slot), left = b.cap - b.filled;
       const col = COLORS[b.color];
-      ctx.fillStyle = col.c; rr(r.x + 3, r.y + r.h + 5, r.w - 6, 18, 6); ctx.fill();
+      ctx.fillStyle = col.c; rr(r.x + 4, r.y + r.h - 12, r.w - 8, 17, 6); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = b.color === 9 || b.color === 3 ? '#0f172a' : '#fff';
       ctx.font = '900 13px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(left), r.x + r.w / 2, r.y + r.h + 14.5);
+      ctx.fillText(String(left), r.x + r.w / 2, r.y + r.h - 3.5);
     }
     // Passengers hopping on
     for (const p of G.particles) {
@@ -1171,7 +1401,7 @@
     if (k === 'sort') {
       const need = {};
       for (const b of G.buses) {
-        if (['slot', 'flying', 'exiting'].includes(b.state)) need[b.color] = (need[b.color] || 0) + b.cap - b.filled;
+        if (['slot', 'flying', 'driving', 'exiting'].includes(b.state)) need[b.color] = (need[b.color] || 0) + b.cap - b.filled;
       }
       for (const c of G.ring) if (c !== null && need[c] > 0) need[c]--;
       const win = G.queue.slice(0, 240), front = [], rest = [];
