@@ -26,6 +26,8 @@ Special pieces show up as you go:
 - **Traffic cones (from level 64)** never move.
 - **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
 
+Each level is set somewhere people line up for buses, from 12 themes that repeat: stadium, county fair, music festival, airport, factory, train station, ferry port, school, beach, ski resort, theme park and downtown.
+
 Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up. Its shape changes from level to level, from round to long and flat. Past level 45 levels keep getting harder up to level 100: more buses, a smaller carousel, more special buses and a more mixed-up line. By level 100 one wrong move almost always loses.
 
 ## No ads, no pay-to-win
@@ -64,6 +66,7 @@ python3 -m http.server 8123
 
 - `index.html`: page, HUD and styles
 - `game.js`: level generator, game logic and canvas rendering
+- `scenery.js`: the level themes and the parking lot background
 - `sw.js`: offline cache. Bump `VERSION` when shipping changes so installed copies update
 - `tools/autoplay.js`: Playwright bot that plays levels 1-50 to check difficulty
 

@@ -440,8 +440,22 @@
       }
       return pts;
     });
+    paintScenery();
   }
   let chutes = [[], []];
+
+  // The scenery behind everything is painted once per level and screen size
+  const bg = document.createElement('canvas');
+  function paintScenery() {
+    bg.width = canvas.width; bg.height = canvas.height;
+    const c = bg.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    window.Scenery.paint(c, {
+      cw, ch, crowdH, slotTop, slotH, level: save.level,
+      lot: { x: lotX, y: lotY, w: LW * ls, h: LH * ls },
+      ring: { xl: ringXL, xr: ringXR, yt: ringYT, yb: ringYB, r: ringR, belt: BELT_W },
+    });
+  }
   // Point on a chute, d measured from where it meets the belt, with the
   // direction people walk there (towards the belt)
   function chutePoint(side, d) {
@@ -523,7 +537,9 @@
     revealFree();
     updateHUD();
     introduceNewPieces();
-    if (isHard(save.level) && !G.modal) toast('HARD level! Double coins if you clear it 💪', 2200);
+    const theme = window.Scenery.themeFor(save.level);
+    if (isHard(save.level) && !G.modal) toast(`${theme.icon} ${theme.name}: HARD level! Double coins if you clear it 💪`, 2400);
+    else if (!G.modal) toast(`${theme.icon} ${theme.name}`, 1400);
   }
   function makeBus(b, id) {
     return { ...b, id, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0, flipT: 0, emergeT: 0 };
@@ -1022,11 +1038,8 @@
   let clock = 0;
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Plaza where the crowd waits
-    ctx.fillStyle = '#e7ecf3'; ctx.fillRect(0, 0, cw, crowdH);
-    ctx.strokeStyle = 'rgba(148,163,184,0.25)'; ctx.lineWidth = 1;
-    for (let x = 0; x < cw; x += 28) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, crowdH); ctx.stroke(); }
-    for (let y = 0; y < crowdH; y += 28) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
+    // Scenery: the themed plaza where the crowd waits, and the parking lot
+    ctx.drawImage(bg, 0, 0, cw, ch);
     // The two chutes, curving in from off the top of the screen
     ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
     for (const side of [0, 1]) {
@@ -1083,8 +1096,7 @@
       }
     }
 
-    // Parking lot
-    ctx.fillStyle = '#d3dbe7'; ctx.fillRect(0, lotTop - 6, cw, ch - lotTop + 6);
+    // Parking lot pieces
     for (const t of G.tunnels) (t.cone ? drawCone : drawTunnel)(t);
 
     // People riding the carousel, bobbing as they march; new arrivals walk in
@@ -1105,12 +1117,12 @@
       for (let i = n - 1; i >= 0; i--) {
         const p = feedSpot(side, i);
         const bob = side === activeFeed() && G.shift > 0 ? Math.abs(Math.sin(clock * 16 + i * 1.7)) * 1.6 : 0;
-        if (p.y > -10) drawPerson(p.x, p.y - bob, line[i], RING_SCALE);
+        if (p.y < -10) continue;
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.y / (feedTop * 0.5)));  // fade out up the chute
+        drawPerson(p.x, p.y - bob, line[i], RING_SCALE);
+        ctx.globalAlpha = 1;
       }
     }
-    const fade = ctx.createLinearGradient(0, 0, 0, feedTop * 0.6);
-    fade.addColorStop(0, 'rgba(231,236,243,1)'); fade.addColorStop(1, 'rgba(231,236,243,0)');
-    ctx.fillStyle = fade; ctx.fillRect(0, 0, cw, feedTop * 0.6);
 
     // Buses: parked first, moving ones on top
     for (const b of G.buses) if (b.state === 'lot') {
