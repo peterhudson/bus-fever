@@ -258,18 +258,27 @@
     theme.plaza(cw, crowdH, rnd, side);
     ctx.restore();
 
-    // Parking lot: verge, curb, asphalt, painted stalls, lights and shrubs
-    const v = VERGE[theme.verge], top = g.slotTop + g.slotH;
+    // Parking lot: verge, the road around it, curb, asphalt, painted stalls,
+    // lights and shrubs
+    const v = VERGE[theme.verge], top = g.slotTop + g.slotH, R = g.road, rw = g.roadW;
     ctx.fillStyle = v.base; ctx.fillRect(0, top, cw, ch - top);
     ctx.fillStyle = v.dots;
     for (let i = 0; i < (cw * (ch - top)) / 400; i++) { ctx.beginPath(); ctx.arc(rnd() * cw, top + rnd() * (ch - top), 1 + rnd(), 0, Math.PI * 2); ctx.fill(); }
-    const pad = 10, L = { x: g.lot.x - pad, y: g.lot.y - pad, w: g.lot.w + pad * 2, h: g.lot.h + pad * 2 };
-    L.y = Math.max(top + 8, L.y); L.h = Math.min(ch - 6, g.lot.y + g.lot.h + pad) - L.y;
-    L.x = Math.max(6, L.x); L.w = Math.min(cw - 6, g.lot.x + g.lot.w + pad) - L.x;
-    ctx.fillStyle = 'rgba(15,23,42,0.15)'; rr(L.x + 2, L.y + 3, L.w, L.h, 12); ctx.fill();
-    ctx.fillStyle = '#e5e7eb'; rr(L.x - 4, L.y - 4, L.w + 8, L.h + 8, 14); ctx.fill();   // curb
-    ctx.fillStyle = '#a3abb8'; rr(L.x, L.y, L.w, L.h, 10); ctx.fill();                     // asphalt
-    ctx.save(); rr(L.x, L.y, L.w, L.h, 10); ctx.clip();
+    // the road: full width along the top, and a loop round the lot
+    const roadPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(-20, R.y0); ctx.lineTo(cw + 20, R.y0);
+      ctx.moveTo(R.x0, R.y0); ctx.lineTo(R.x0, R.y1); ctx.lineTo(R.x1, R.y1); ctx.lineTo(R.x1, R.y0);
+    };
+    ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+    roadPath(); ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = rw + g.curb * 2; ctx.stroke();
+    roadPath(); ctx.strokeStyle = '#4b5563'; ctx.lineWidth = rw; ctx.stroke();
+    roadPath(); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 7]); ctx.stroke(); ctx.setLineDash([]);
+    // asphalt lot inside the loop
+    const pad = g.pad, L = { x: g.lot.x - pad, y: g.lot.y - pad, w: g.lot.w + pad * 2, h: g.lot.h + pad * 2 };
+    ctx.fillStyle = '#e5e7eb'; rr(L.x - g.curb, L.y - g.curb, L.w + g.curb * 2, L.h + g.curb * 2, 8); ctx.fill();   // curb
+    ctx.fillStyle = '#a3abb8'; rr(L.x, L.y, L.w, L.h, 6); ctx.fill();                                               // asphalt
+    ctx.save(); rr(L.x, L.y, L.w, L.h, 6); ctx.clip();
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
     for (let i = 0; i < (L.w * L.h) / 60; i++) ctx.fillRect(L.x + rnd() * L.w, L.y + rnd() * L.h, 1.5, 1.5);
     // stall lines along the top and bottom edges, a dashed lane down the middle
@@ -282,18 +291,14 @@
     ctx.strokeStyle = 'rgba(250,204,21,0.55)'; ctx.setLineDash([12, 10]);
     ctx.beginPath(); ctx.moveTo(L.x + 8, L.y + L.h / 2); ctx.lineTo(L.x + L.w - 8, L.y + L.h / 2); ctx.stroke(); ctx.setLineDash([]);
     ctx.restore();
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; rr(L.x + 3, L.y + 3, L.w - 6, L.h - 6, 8); ctx.stroke();
-    // street lights on the curb, props on the verge
-    const lx0 = L.x - 4, lx1 = L.x + L.w + 4;
-    [L.y + 10, L.y + L.h / 2, L.y + L.h - 10].forEach((y) => { if (lx0 > 6) lamp(lx0, y, 1); if (cw - lx1 > 6) lamp(lx1, y, -1); });
-    const vergeW = L.x - 4;
-    if (vergeW > 14) {
-      for (let y = L.y + 30; y < L.y + L.h - 20; y += 46) { v.prop(vergeW / 2, y, Math.min(1, vergeW / 26)); v.prop(cw - vergeW / 2, y + 20, Math.min(1, vergeW / 26)); }
+    // street lights on the lot's corners, props on the verge outside the road
+    [[L.x, L.y], [L.x + L.w, L.y], [L.x, L.y + L.h], [L.x + L.w, L.y + L.h]].forEach(([x, y], i) => lamp(x, y, i % 2 ? -1 : 1, 0.8));
+    const outL = R.x0 - rw / 2 - g.curb, outR = R.x1 + rw / 2 + g.curb, below = R.y1 + rw / 2 + g.curb;
+    if (outL > 16) {
+      const sc = Math.min(1, outL / 28);
+      for (let y = R.y0 + rw + 20; y < R.y1 - 10; y += 46) { v.prop(outL / 2, y, sc); v.prop((outR + cw) / 2, y + 20, sc); }
     }
-    for (let x = 18; x < cw; x += 44 + rnd() * 20) {
-      if (ch - (L.y + L.h + 4) > 16) v.prop(x, (L.y + L.h + 4 + ch) / 2, 0.9);
-      if (L.y - 4 - top > 16) v.prop(x + 10, (top + L.y - 4) / 2, 0.8);
-    }
+    if (ch - below > 18) for (let x = 18; x < cw; x += 44 + rnd() * 20) v.prop(x, (below + ch) / 2, Math.min(0.9, (ch - below) / 30));
   }
 
   const themeFor = (level) => THEMES[(Math.max(1, level) - 1) % THEMES.length];

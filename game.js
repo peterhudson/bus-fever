@@ -382,6 +382,8 @@
   // ---------- Layout ----------
   let dpr = 1, cw = 0, ch = 0, crowdH = 0, slotTop = 0, slotH = 0;
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
+  const ROAD = 18, CURB = 4, LOT_PAD = 6;   // road width, curb, asphalt beyond the lot's edge
+  let road = { x0: 0, x1: 0, y0: 0, y1: 0 };  // the road's center line around the lot
   let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1, feedTop = 0;
   const Q_SP = 13, RING_SCALE = 0.86, LANE_W = 10;  // people walk 4 abreast, rows Q_SP apart
   const BELT_W = LANES * LANE_W + 4;                // width of the carousel belt and the chutes
@@ -393,15 +395,20 @@
     cw = canvas.clientWidth; ch = canvas.clientHeight;
     canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
     crowdH = Math.round(Math.max(170, Math.min(ch * 0.32, 260)));
-    slotTop = crowdH; slotH = 92;
-    lotTop = slotTop + slotH + 6;
-    const lotH = ch - lotTop - 6, lotW = cw - 12;
+    slotTop = crowdH; slotH = 80;
+    // A road runs along the bottom of the bays and around the lot. The lot
+    // sits right under the top road; spare height goes below it.
+    const m = 2 + ROAD + CURB + LOT_PAD;
+    lotTop = slotTop + slotH + ROAD + CURB + LOT_PAD;
+    const lotH = ch - lotTop - m, lotW = cw - 2 * m;
     ls = Math.min(lotW / LW, lotH / LH);
-    lotX = 6 + (lotW - LW * ls) / 2;
-    lotY = lotTop + (lotH - LH * ls) / 2;
+    lotX = (cw - LW * ls) / 2;
+    lotY = lotTop;
+    const e = LOT_PAD + CURB + ROAD / 2;
+    road = { x0: lotX - e, x1: lotX + LW * ls + e, y0: slotTop + slotH + ROAD / 2, y1: lotY + LH * ls + e };
     slotW = Math.min(44, (cw - 20 - slotGap * 7) / 8);
     slotX0 = (cw - (slotW * 8 + slotGap * 7)) / 2;
-    slotScale = Math.min((slotH - 36) / BUS_LEN[40], (slotW - 8) / BUS_W);
+    slotScale = Math.min((slotH - 34) / BUS_LEN[40], (slotW - 8) / BUS_W);
 
     if (G) ringLayout();
   }
@@ -451,7 +458,7 @@
     const c = bg.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     window.Scenery.paint(c, {
-      cw, ch, crowdH, slotTop, slotH, level: save.level,
+      cw, ch, crowdH, slotTop, slotH, level: save.level, road, roadW: ROAD, curb: CURB, pad: LOT_PAD,
       lot: { x: lotX, y: lotY, w: LW * ls, h: LH * ls },
       ring: { xl: ringXL, xr: ringXR, yt: ringYT, yb: ringYB, r: ringR, belt: BELT_W },
     });
@@ -509,7 +516,7 @@
   }
 
   function slotRect(i) {
-    return { x: slotX0 + i * (slotW + slotGap), y: slotTop + 8, w: slotW, h: slotH - 34 };
+    return { x: slotX0 + i * (slotW + slotGap), y: slotTop + 6, w: slotW, h: slotH - 30 };
   }
 
   // ---------- Game state ----------
@@ -637,6 +644,52 @@
     const r = slotRect(i);
     return { x: r.x + r.w / 2, y: r.y + r.h / 2, ang: -Math.PI / 2, s: slotScale };
   }
+  // The way a bus drives to its bay: straight on until it reaches the road,
+  // round the road (whichever way is shorter) to the top, along the top to
+  // below its bay, then up into the bay. Screen coordinates.
+  function buildRoute(b) {
+    const p = lotPose(b, b.ex), dx = Math.cos(b.ang), dy = Math.sin(b.ang);
+    const { x0, x1, y0, y1 } = road, W = x1 - x0, H = y1 - y0, P = 2 * (W + H);
+    // where the bus meets the road going straight on
+    let t = Infinity;
+    if (dx > 1e-6) t = Math.min(t, (x1 - p.x) / dx);
+    if (dx < -1e-6) t = Math.min(t, (x0 - p.x) / dx);
+    if (dy > 1e-6) t = Math.min(t, (y1 - p.y) / dy);
+    if (dy < -1e-6) t = Math.min(t, (y0 - p.y) / dy);
+    if (!isFinite(t) || t < 0) t = 0;
+    const hx = Math.max(x0, Math.min(x1, p.x + dx * t)), hy = Math.max(y0, Math.min(y1, p.y + dy * t));
+    // positions along the road, clockwise from the top left corner
+    const along = (x, y) => (Math.abs(y - y0) < 0.5 ? x - x0 : Math.abs(x - x1) < 0.5 ? W + (y - y0) : Math.abs(y - y1) < 0.5 ? W + H + (x1 - x) : 2 * W + H + (y1 - y));
+    const at = (u) => {
+      u = ((u % P) + P) % P;
+      if (u <= W) return [x0 + u, y0];
+      if (u <= W + H) return [x1, y0 + u - W];
+      if (u <= 2 * W + H) return [x1 - (u - W - H), y1];
+      return [x0, y1 - (u - 2 * W - H)];
+    };
+    const bay = slotPose(b.slot), tx = Math.max(x0, Math.min(x1, bay.x));
+    const u0 = along(hx, hy), u1 = tx - x0;
+    const cw2 = (((u1 - u0) % P) + P) % P, ccw = P - cw2, dir = cw2 <= ccw ? 1 : -1, len = Math.min(cw2, ccw);
+    const pts = [[p.x, p.y], [hx, hy]];
+    const corners = [0, W, W + H, 2 * W + H];
+    // corners passed on the way, in order
+    const passed = corners.map((c) => ({ c, d: dir > 0 ? (((c - u0) % P) + P) % P : (((u0 - c) % P) + P) % P })).filter((o) => o.d > 0.5 && o.d < len - 0.5).sort((a, c) => a.d - c.d);
+    for (const o of passed) pts.push(at(o.c));
+    pts.push([tx, y0]);
+    if (tx !== bay.x) pts.push([bay.x, y0]);   // the top road runs the full width
+    pts.push([bay.x, bay.y]);
+    const route = [];
+    let d = 0;
+    pts.forEach(([x, y], i) => { if (i) d += Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]); route.push({ x, y, d }); });
+    return route;
+  }
+  function routePoint(route, d) {
+    let i = 1;
+    while (i < route.length - 1 && route[i].d < d) i++;
+    const a = route[i - 1], c = route[i], f = Math.max(0, Math.min(1, (d - a.d) / ((c.d - a.d) || 1)));
+    return { x: a.x + (c.x - a.x) * f, y: a.y + (c.y - a.y) * f };
+  }
+
   function poseOf(b) {
     switch (b.state) {
       case 'lot': return lotPose(b);
@@ -645,6 +698,14 @@
         const to = slotPose(b.slot), t = easeInOut(Math.min(1, b.t));
         return { x: lerp(b.from.x, to.x, t), y: lerp(b.from.y, to.y, t) - Math.sin(Math.PI * t) * 20,
           ang: lerpAngle(b.from.ang, to.ang, t), s: lerp(b.from.s, to.s, t) };
+      }
+      case 'driving': {
+        const R = b.route, end = R[R.length - 1].d, d = Math.min(b.dist, end);
+        const p = routePoint(R, d), a = routePoint(R, Math.max(0, d - 7)), c = routePoint(R, Math.min(end, d + 7));
+        const ang = c.x === a.x && c.y === a.y ? -Math.PI / 2 : Math.atan2(c.y - a.y, c.x - a.x);
+        // shrink to bay size on the last stretch up into the bay
+        const last = end - R[R.length - 2].d, f = Math.max(0, Math.min(1, 1 - (end - d) / (last || 1)));
+        return { x: p.x, y: p.y, ang, s: lerp(ls, slotScale, f) };
       }
       case 'slot': return slotPose(b.slot);
       case 'leaving': {
@@ -751,12 +812,18 @@
         case 'exiting': {
           b.ex += (300 + b.ex * 4) * dt;
           const x = b.x + Math.cos(b.ang) * b.ex, y = b.y + Math.sin(b.ang) * b.ex;
-          if (outOfLot(b.len, x, y) || b.ex > 500) {
-            b.from = lotPose(b, b.ex);
-            b.state = 'flying'; b.t = 0;
+          // once its middle is past the lot's edge it heads for the road
+          if (x < 0 || x > LW || y < 0 || y > LH || b.ex > 500) {
+            b.route = buildRoute(b);
+            b.state = 'driving'; b.dist = 0; b.v = 300 + b.ex;
           }
           break;
         }
+        case 'driving':
+          b.v = Math.min(900, b.v + 1400 * dt);
+          b.dist += b.v * dt;
+          if (b.dist >= b.route[b.route.length - 1].d) { b.state = 'slot'; b.t = 0; }
+          break;
         case 'flying':
           b.t += dt / FLY_DUR;
           if (b.t >= 1) { b.state = 'slot'; b.t = 0; }
@@ -849,7 +916,7 @@
     const waiting = G.queue.length > 0 || G.ring.some((c) => c !== null);
     if (G.won || G.modal || G.failDismissed || !waiting) { G.stuckT = 0; return; }
     const busy = G.particles.length || G.shift > 0.05 ||
-      G.buses.some((b) => b.state === 'exiting' || b.state === 'flying' || (b.state === 'lot' && b.bumpT > 0));
+      G.buses.some((b) => b.state === 'exiting' || b.state === 'driving' || b.state === 'flying' || (b.state === 'lot' && b.bumpT > 0));
     if (busy) { G.stuckT = 0; return; }
     G.checkT -= dt;
     if (G.checkT > 0) { if (G.stuckT > 0) G.stuckT += dt; return; }
@@ -1139,17 +1206,17 @@
       if (b.state === 'slot' || b.state === 'leaving') drawBus(b, poseOf(b), 'seats');
     }
     for (const b of G.buses) {
-      if (b.state === 'exiting' || b.state === 'flying') drawBus(b, poseOf(b), b.state === 'flying' && b.t > 0.5 ? 'seats' : 'arrow');
+      if (b.state === 'exiting' || b.state === 'driving' || b.state === 'flying') drawBus(b, poseOf(b), (b.state === 'flying' && b.t > 0.5) || (b.state === 'driving' && b.dist > b.route[b.route.length - 2].d) ? 'seats' : 'arrow');
     }
     // Seats-left badges under bays
     for (const b of G.buses) {
       if (b.state !== 'slot') continue;
       const r = slotRect(b.slot), left = b.cap - b.filled;
       const col = COLORS[b.color];
-      ctx.fillStyle = col.c; rr(r.x + 3, r.y + r.h + 5, r.w - 6, 18, 6); ctx.fill();
+      ctx.fillStyle = col.c; rr(r.x + 3, r.y + r.h + 3, r.w - 6, 18, 6); ctx.fill();
       ctx.fillStyle = b.color === 9 || b.color === 3 ? '#0f172a' : '#fff';
       ctx.font = '900 13px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(left), r.x + r.w / 2, r.y + r.h + 14.5);
+      ctx.fillText(String(left), r.x + r.w / 2, r.y + r.h + 12.5);
     }
     // Passengers hopping on
     for (const p of G.particles) {
@@ -1232,7 +1299,7 @@
     if (k === 'sort') {
       const need = {};
       for (const b of G.buses) {
-        if (['slot', 'flying', 'exiting'].includes(b.state)) need[b.color] = (need[b.color] || 0) + b.cap - b.filled;
+        if (['slot', 'flying', 'driving', 'exiting'].includes(b.state)) need[b.color] = (need[b.color] || 0) + b.cap - b.filled;
       }
       for (const c of G.ring) if (c !== null && need[c] > 0) need[c]--;
       const win = G.queue.slice(0, 240), front = [], rest = [];
