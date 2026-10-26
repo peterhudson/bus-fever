@@ -107,7 +107,7 @@
   // Each theme paints the plaza (w x h, the top of the screen). `side` lists
   // free spots beside the carousel where props look good.
   const THEMES = [
-    { name: 'Stadium', icon: '🏟️', verge: 'grass', plaza(w, h, rnd, side) {
+    { name: 'Stadium', icon: '🏟️', plaza(w, h, rnd, side) {
       stripes(w, h, '#5fbf5a', '#55b350', 22, true);
       ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(w / 2, h * 0.45, Math.min(w, h) * 0.22, 0, Math.PI * 2); ctx.stroke();
@@ -117,7 +117,7 @@
       speckle(w, 27, rnd, w / 3, 'rgba(239,68,68,0.8)', 1.4); speckle(w, 27, rnd, w / 4, 'rgba(59,130,246,0.8)', 1.4);
       side.forEach((p) => { ctx.fillStyle = '#f8fafc'; rr(p.x - 9, p.y - 6, 18, 12, 2); ctx.fill(); ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; ctx.stroke(); });
     } },
-    { name: 'County fair', icon: '🎡', verge: 'grass', plaza(w, h, rnd, side) {
+    { name: 'County fair', icon: '🎡', plaza(w, h, rnd, side) {
       ctx.fillStyle = '#86cf6a'; ctx.fillRect(0, 0, w, h);
       speckle(w, h, rnd, w / 2, 'rgba(255,255,255,0.35)', 1);
       ctx.fillStyle = '#d9b77c'; ctx.fillRect(0, h * 0.62, w, 14);  // dirt path
@@ -128,7 +128,7 @@
       ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(fx, fy, fr, 0, Math.PI * 2); ctx.stroke();
       for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + Math.cos(a) * fr, fy + Math.sin(a) * fr); ctx.stroke(); circle(fx + Math.cos(a) * fr, fy + Math.sin(a) * fr, 3.5, ['#ef4444', '#facc15', '#3b82f6', '#a855f7'][k % 4]); }
     } },
-    { name: 'Music festival', icon: '🎸', verge: 'grass', plaza(w, h, rnd, side) {
+    { name: 'Music festival', icon: '🎸', plaza(w, h, rnd, side) {
       const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#3b2a6b'); g.addColorStop(1, '#6d4fa8');
       ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
       // stage lights sweeping down
@@ -139,7 +139,7 @@
       speckle(w, h, rnd, w / 2, 'rgba(255,255,255,0.5)', 0.9);
       side.forEach((p, i) => tent(p.x, p.y, 20, ['#f472b6', '#38bdf8', '#facc15'][i % 3], '#1e1b4b'));
     } },
-    { name: 'Airport', icon: '✈️', verge: 'concrete', plaza(w, h, rnd, side) {
+    { name: 'Airport', icon: '✈️', plaza(w, h, rnd, side) {
       ctx.fillStyle = '#9ca3af'; ctx.fillRect(0, 0, w, h);
       speckle(w, h, rnd, w, 'rgba(255,255,255,0.12)', 1.2);
       ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
@@ -153,14 +153,14 @@
       ctx.fillStyle = '#2563eb'; ctx.fillRect(px - 1.5 * s, py - 26 * s, 3 * s, 50 * s);
       side.forEach((p) => { ctx.fillStyle = '#f97316'; rr(p.x - 6, p.y - 8, 12, 16, 2); ctx.fill(); });  // baggage carts
     } },
-    { name: 'Factory', icon: '🏭', verge: 'concrete', plaza(w, h, rnd, side) {
+    { name: 'Factory', icon: '🏭', plaza(w, h, rnd, side) {
       tiles(w, h, '#b8b1a6', 'rgba(87,83,78,0.25)', 24);
       ctx.fillStyle = '#facc15'; for (let x = 0; x < w; x += 16) { ctx.save(); ctx.translate(x, h * 0.86); ctx.rotate(-0.6); ctx.fillRect(0, 0, 6, 12); ctx.restore(); }
       ctx.fillStyle = '#7c2d12'; ctx.fillRect(0, 0, w, 16); ctx.fillStyle = '#9a3412';
       for (let x = 0; x < w; x += 14) ctx.fillRect(x, 0, 12, 6);
       side.forEach((p) => { circle(p.x + 2, p.y + 3, 9, 'rgba(15,23,42,0.18)'); circle(p.x, p.y, 9, '#64748b'); circle(p.x, p.y, 5, '#334155'); });  // chimneys from above
     } },
-    { name: 'Train station', icon: '🚆', verge: 'concrete', plaza(w, h, rnd, side) {
+    { name: 'Train station', icon: '🚆', plaza(w, h, rnd, side) {
       tiles(w, h, '#d6d3d1', 'rgba(120,113,108,0.25)', 18);
       ctx.fillStyle = '#facc15'; ctx.fillRect(0, h * 0.2, w, 4);
       ctx.fillStyle = '#78716c'; ctx.fillRect(0, 0, w, h * 0.2);
@@ -168,7 +168,7 @@
       ctx.fillStyle = '#e7e5e4'; ctx.fillRect(0, h * 0.06, w, 2); ctx.fillRect(0, h * 0.14, w, 2);  // rails
       side.forEach((p) => { ctx.fillStyle = '#1e3a8a'; rr(p.x - 10, p.y - 4, 20, 8, 2); ctx.fill(); });  // benches
     } },
-    { name: 'Ferry port', icon: '⛴️', verge: 'concrete', plaza(w, h, rnd, side) {
+    { name: 'Ferry port', icon: '⛴️', plaza(w, h, rnd, side) {
       ctx.fillStyle = '#c9b48a'; ctx.fillRect(0, 0, w, h);  // boardwalk
       ctx.strokeStyle = 'rgba(120,85,40,0.35)'; ctx.lineWidth = 1;
       for (let y = 0.5; y < h; y += 8) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
@@ -179,7 +179,7 @@
       ctx.fillStyle = '#f8fafc'; rr(fx - 34, fy - 9, 68, 18, 9); ctx.fill(); ctx.fillStyle = '#ef4444'; rr(fx - 14, fy - 5, 22, 10, 3); ctx.fill();
       side.forEach((p) => { circle(p.x, p.y, 5, '#334155'); circle(p.x, p.y, 2.5, '#94a3b8'); });  // bollards
     } },
-    { name: 'School', icon: '🏫', verge: 'grass', plaza(w, h, rnd, side) {
+    { name: 'School', icon: '🏫', plaza(w, h, rnd, side) {
       ctx.fillStyle = '#e8b796'; ctx.fillRect(0, 0, w, h);  // brick-red playground
       ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2;
       // hopscotch and four square
@@ -187,7 +187,7 @@
       ctx.strokeRect(w - 54, 14, 40, 40); ctx.beginPath(); ctx.moveTo(w - 34, 14); ctx.lineTo(w - 34, 54); ctx.moveTo(w - 54, 34); ctx.lineTo(w - 14, 34); ctx.stroke();
       side.forEach((p) => tree(p.x, p.y, 0.9));
     } },
-    { name: 'Beach', icon: '🏖️', verge: 'sand', plaza(w, h, rnd, side) {
+    { name: 'Beach', icon: '🏖️', plaza(w, h, rnd, side) {
       ctx.fillStyle = '#f5dfa3'; ctx.fillRect(0, 0, w, h); speckle(w, h, rnd, w, 'rgba(180,140,60,0.25)', 0.9);
       ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, 0); ctx.lineTo(w, h * 0.14);
       for (let x = w; x >= 0; x -= 20) ctx.quadraticCurveTo(x - 5, h * 0.18, x - 10, h * 0.14);
@@ -197,14 +197,14 @@
         else { ctx.fillStyle = 'rgba(15,23,42,0.15)'; ctx.beginPath(); ctx.arc(p.x + 3, p.y + 4, 11, 0, Math.PI * 2); ctx.fill(); tent(p.x, p.y, 20, '#f43f5e', '#fff'); }
       });
     } },
-    { name: 'Ski resort', icon: '⛷️', verge: 'snow', plaza(w, h, rnd, side) {
+    { name: 'Ski resort', icon: '⛷️', plaza(w, h, rnd, side) {
       ctx.fillStyle = '#f1f5f9'; ctx.fillRect(0, 0, w, h); speckle(w, h, rnd, w / 2, 'rgba(148,163,184,0.35)', 1);
       ctx.strokeStyle = 'rgba(148,163,184,0.5)'; ctx.lineWidth = 1;
       for (let i = 0; i < 6; i++) { const x = rnd() * w; ctx.beginPath(); ctx.moveTo(x, 0); ctx.bezierCurveTo(x + 30, h * 0.3, x - 30, h * 0.6, x + 10, h); ctx.stroke(); }  // ski tracks
       side.forEach((p) => pine(p.x, p.y, 1.1, true));
       pine(w * 0.06, h * 0.2, 1.2, true); pine(w * 0.94, h * 0.25, 1.2, true);
     } },
-    { name: 'Theme park', icon: '🎢', verge: 'grass', plaza(w, h, rnd, side) {
+    { name: 'Theme park', icon: '🎢', plaza(w, h, rnd, side) {
       tiles(w, h, '#fde68a', 'rgba(217,119,6,0.18)', 20);
       // roller coaster track snaking across the top
       ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3;
@@ -212,7 +212,7 @@
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.stroke(); ctx.setLineDash([]);
       side.forEach((p, i) => (i % 2 ? circle(p.x, p.y, 7, ['#f472b6', '#60a5fa', '#a78bfa'][i % 3]) : shrub(p.x, p.y, 1.1)));  // balloons and shrubs
     } },
-    { name: 'Downtown', icon: '🏙️', verge: 'concrete', plaza(w, h, rnd, side) {
+    { name: 'Downtown', icon: '🏙️', plaza(w, h, rnd, side) {
       tiles(w, h, '#cbd5e1', 'rgba(100,116,139,0.25)', 16);
       // rooftops along the top
       let x = 0;
@@ -226,13 +226,6 @@
     } },
   ];
 
-  const VERGE = {
-    grass: { base: '#8fd27a', dots: 'rgba(255,255,255,0.3)', prop: (x, y, s) => shrub(x, y, s) },
-    concrete: { base: '#cfd6df', dots: 'rgba(100,116,139,0.2)', prop: (x, y, s) => shrub(x, y, s * 0.9, '#3f8f4a', '#5bb562') },
-    sand: { base: '#f3dfa6', dots: 'rgba(180,140,60,0.25)', prop: (x, y, s) => palm(x, y, s) },
-    snow: { base: '#eef3f8', dots: 'rgba(148,163,184,0.35)', prop: (x, y, s) => pine(x, y, s, true) },
-  };
-
   function mulberry32(a) {
     return function () {
       a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -242,7 +235,7 @@
     };
   }
 
-  // g: { cw, ch, crowdH, slotTop, slotH, lot: {x, y, w, h}, ring: {xl, xr, yt, yb, r, belt}, level }
+  // g: { cw, ch, crowdH, slotTop, slotH, lot: {x, y, w, h}, road, roadW, asphalt, ring: {xl, xr, yt, yb, r, belt}, level }
   function paint(c, g) {
     ctx = c;
     const theme = themeFor(g.level), rnd = mulberry32(g.level * 2654435761);
@@ -258,26 +251,17 @@
     theme.plaza(cw, crowdH, rnd, side);
     ctx.restore();
 
-    // Parking lot: verge, the road around it, curb, asphalt, painted stalls,
-    // lights and shrubs
-    const v = VERGE[theme.verge], top = g.slotTop + g.slotH, R = g.road, rw = g.roadW;
-    ctx.fillStyle = v.base; ctx.fillRect(0, top, cw, ch - top);
-    ctx.fillStyle = v.dots;
-    for (let i = 0; i < (cw * (ch - top)) / 400; i++) { ctx.beginPath(); ctx.arc(rnd() * cw, top + rnd() * (ch - top), 1 + rnd(), 0, Math.PI * 2); ctx.fill(); }
-    // the road: full width along the top, and a loop round the lot
-    const roadPath = () => {
-      ctx.beginPath();
-      ctx.moveTo(-20, R.y0); ctx.lineTo(cw + 20, R.y0);
-      ctx.moveTo(R.x0, R.y0); ctx.lineTo(R.x0, R.y1); ctx.lineTo(R.x1, R.y1); ctx.lineTo(R.x1, R.y0);
-    };
-    ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
-    roadPath(); ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = rw + g.curb * 2; ctx.stroke();
-    roadPath(); ctx.strokeStyle = '#4b5563'; ctx.lineWidth = rw; ctx.stroke();
-    roadPath(); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 7]); ctx.stroke(); ctx.setLineDash([]);
-    // asphalt lot inside the loop
-    const pad = g.pad, L = { x: g.lot.x - pad, y: g.lot.y - pad, w: g.lot.w + pad * 2, h: g.lot.h + pad * 2 };
-    ctx.fillStyle = '#e5e7eb'; rr(L.x - g.curb, L.y - g.curb, L.w + g.curb * 2, L.h + g.curb * 2, 8); ctx.fill();   // curb
-    ctx.fillStyle = '#a3abb8'; rr(L.x, L.y, L.w, L.h, 6); ctx.fill();                                               // asphalt
+    // Parking lot: the road round the screen's edges, the curb, asphalt
+    // filling everything inside, painted stalls and street lights
+    const top = g.slotTop + g.slotH, R = g.road, rw = g.roadW, A = g.asphalt;
+    ctx.fillStyle = '#e5e7eb'; ctx.fillRect(0, top, cw, ch - top);                       // curb
+    ctx.fillStyle = '#4b5563';
+    ctx.fillRect(0, top, cw, rw); ctx.fillRect(0, top, rw, ch - top);
+    ctx.fillRect(cw - rw, top, rw, ch - top); ctx.fillRect(0, ch - rw, cw, rw);          // road
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 7]);
+    ctx.beginPath(); ctx.rect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); ctx.stroke(); ctx.setLineDash([]);
+    const L = A;
+    ctx.fillStyle = '#a3abb8'; rr(L.x, L.y, L.w, L.h, 6); ctx.fill();                   // asphalt
     ctx.save(); rr(L.x, L.y, L.w, L.h, 6); ctx.clip();
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
     for (let i = 0; i < (L.w * L.h) / 60; i++) ctx.fillRect(L.x + rnd() * L.w, L.y + rnd() * L.h, 1.5, 1.5);
@@ -285,20 +269,14 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
     const step = Math.max(18, (g.lot.w / 330) * 26);
     for (let x = L.x + step / 2; x < L.x + L.w; x += step) {
-      ctx.beginPath(); ctx.moveTo(x, L.y); ctx.lineTo(x, L.y + 14); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x, L.y + L.h); ctx.lineTo(x, L.y + L.h - 14); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, L.y); ctx.lineTo(x, L.y + 12); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, L.y + L.h); ctx.lineTo(x, L.y + L.h - 12); ctx.stroke();
     }
     ctx.strokeStyle = 'rgba(250,204,21,0.55)'; ctx.setLineDash([12, 10]);
     ctx.beginPath(); ctx.moveTo(L.x + 8, L.y + L.h / 2); ctx.lineTo(L.x + L.w - 8, L.y + L.h / 2); ctx.stroke(); ctx.setLineDash([]);
     ctx.restore();
-    // street lights on the lot's corners, props on the verge outside the road
-    [[L.x, L.y], [L.x + L.w, L.y], [L.x, L.y + L.h], [L.x + L.w, L.y + L.h]].forEach(([x, y], i) => lamp(x, y, i % 2 ? -1 : 1, 0.8));
-    const outL = R.x0 - rw / 2 - g.curb, outR = R.x1 + rw / 2 + g.curb, below = R.y1 + rw / 2 + g.curb;
-    if (outL > 16) {
-      const sc = Math.min(1, outL / 28);
-      for (let y = R.y0 + rw + 20; y < R.y1 - 10; y += 46) { v.prop(outL / 2, y, sc); v.prop((outR + cw) / 2, y + 20, sc); }
-    }
-    if (ch - below > 18) for (let x = 18; x < cw; x += 44 + rnd() * 20) v.prop(x, (below + ch) / 2, Math.min(0.9, (ch - below) / 30));
+    // street lights on the lot's corners
+    [[L.x, L.y], [L.x + L.w, L.y], [L.x, L.y + L.h], [L.x + L.w, L.y + L.h]].forEach(([x, y], i) => lamp(x + (i % 2 ? -4 : 4), y + (i < 2 ? 4 : -4), i % 2 ? -1 : 1, 0.8));
   }
 
   const themeFor = (level) => THEMES[(Math.max(1, level) - 1) % THEMES.length];

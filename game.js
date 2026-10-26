@@ -382,8 +382,9 @@
   // ---------- Layout ----------
   let dpr = 1, cw = 0, ch = 0, crowdH = 0, slotTop = 0, slotH = 0;
   let lotX = 0, lotY = 0, ls = 1, lotTop = 0, slotW = 0, slotX0 = 0, slotGap = 6, slotScale = 1;
-  const ROAD = 18, CURB = 4, LOT_PAD = 6;   // road width, curb, asphalt beyond the lot's edge
+  const ROAD = 16, CURB = 2, LOT_PAD = 3;   // road width, curb, asphalt beyond the lot's play area
   let road = { x0: 0, x1: 0, y0: 0, y1: 0 };  // the road's center line around the lot
+  let asphalt = { x: 0, y: 0, w: 0, h: 0 };
   let ringXL = 0, ringXR = 0, ringYT = 0, ringYB = 0, ringR = 20, ringLen = 1, feedTop = 0;
   const Q_SP = 13, RING_SCALE = 0.86, LANE_W = 10;  // people walk 4 abreast, rows Q_SP apart
   const BELT_W = LANES * LANE_W + 4;                // width of the carousel belt and the chutes
@@ -395,22 +396,35 @@
     cw = canvas.clientWidth; ch = canvas.clientHeight;
     canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
     crowdH = Math.round(Math.max(170, Math.min(ch * 0.32, 260)));
-    slotTop = crowdH; slotH = 80;
-    // A road runs along the bottom of the bays and around the lot. The lot
-    // sits right under the top road; spare height goes below it.
-    const m = 2 + ROAD + CURB + LOT_PAD;
-    lotTop = slotTop + slotH + ROAD + CURB + LOT_PAD;
-    const lotH = ch - lotTop - m, lotW = cw - 2 * m;
-    ls = Math.min(lotW / LW, lotH / LH);
-    lotX = (cw - LW * ls) / 2;
-    lotY = lotTop;
-    const e = LOT_PAD + CURB + ROAD / 2;
-    road = { x0: lotX - e, x1: lotX + LW * ls + e, y0: slotTop + slotH + ROAD / 2, y1: lotY + LH * ls + e };
+    slotTop = crowdH; slotH = 60;
+    // The road runs round the screen's edges below the bays and the asphalt
+    // fills everything inside it. The lot's play area is centred on it.
+    const e = ROAD / 2, in_ = ROAD + CURB + LOT_PAD;
+    road = { x0: e, x1: cw - e, y0: slotTop + slotH + e, y1: ch - e };
+    asphalt = { x: ROAD + CURB, y: slotTop + slotH + ROAD + CURB, w: cw - 2 * (ROAD + CURB), h: ch - slotTop - slotH - 2 * (ROAD + CURB) };
+    lotTop = slotTop + slotH + in_;
     slotW = Math.min(44, (cw - 20 - slotGap * 7) / 8);
     slotX0 = (cw - (slotW * 8 + slotGap * 7)) / 2;
-    slotScale = Math.min((slotH - 34) / BUS_LEN[40], (slotW - 8) / BUS_W);
+    slotScale = Math.min((slotH - 12) / BUS_LEN[40], (slotW - 8) / BUS_W);
 
-    if (G) ringLayout();
+    if (G) { fitLot(); ringLayout(); }
+  }
+  // Zoom the lot so this level's buses fill the asphalt. The box is taken
+  // once at the start of a level so the view doesn't move while playing.
+  function fitLot() {
+    const in_ = ROAD + CURB + LOT_PAD, W = cw - 2 * in_, H = ch - lotTop - in_;
+    const B = (G && G.box) || { x0: 0, y0: 0, x1: LW, y1: LH };
+    ls = Math.min(W / (B.x1 - B.x0), H / (B.y1 - B.y0), 1.7);
+    lotX = cw / 2 - ((B.x0 + B.x1) / 2) * ls;
+    lotY = lotTop + H / 2 - ((B.y0 + B.y1) / 2) * ls;
+  }
+  function levelBox() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const add = (pts) => pts.forEach(([x, y]) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); });
+    G.buses.forEach((b) => add(corners(b.x, b.y, b.ang, b.len, BUS_W)));
+    G.tunnels.forEach((t) => add(corners(t.x, t.y, t.ang, t.len, t.wid)));
+    const m = 8;
+    return { x0: Math.max(0, x0 - m), y0: Math.max(0, y0 - m), x1: Math.min(LW, x1 + m), y1: Math.min(LH, y1 + m) };
   }
 
   // Carousel: a stadium-shaped loop just above the bays, with two feeder lines
@@ -458,7 +472,7 @@
     const c = bg.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     window.Scenery.paint(c, {
-      cw, ch, crowdH, slotTop, slotH, level: save.level, road, roadW: ROAD, curb: CURB, pad: LOT_PAD,
+      cw, ch, crowdH, slotTop, slotH, level: save.level, road, roadW: ROAD, curb: CURB, asphalt,
       lot: { x: lotX, y: lotY, w: LW * ls, h: LH * ls },
       ring: { xl: ringXL, xr: ringXR, yt: ringYT, yb: ringYB, r: ringR, belt: BELT_W },
     });
@@ -516,7 +530,7 @@
   }
 
   function slotRect(i) {
-    return { x: slotX0 + i * (slotW + slotGap), y: slotTop + 6, w: slotW, h: slotH - 30 };
+    return { x: slotX0 + i * (slotW + slotGap), y: slotTop + 5, w: slotW, h: slotH - 10 };
   }
 
   // ---------- Game state ----------
@@ -540,6 +554,8 @@
     // The carousel starts full; the left feeder line holds the first half of the rest
     for (let k = 0; k < G.ring.length && G.queue.length; k++) G.ring[k] = G.queue.shift();
     G.leftN = LANES * Math.ceil(G.queue.length / LANES / 2);
+    G.box = levelBox();
+    fitLot();
     ringLayout();
     revealFree();
     updateHUD();
@@ -813,7 +829,8 @@
           b.ex += (300 + b.ex * 4) * dt;
           const x = b.x + Math.cos(b.ang) * b.ex, y = b.y + Math.sin(b.ang) * b.ex;
           // once its middle is past the lot's edge it heads for the road
-          if (x < 0 || x > LW || y < 0 || y > LH || b.ex > 500) {
+          const sx = lotX + x * ls, sy = lotY + y * ls;
+          if (sx < asphalt.x || sx > asphalt.x + asphalt.w || sy < asphalt.y || sy > asphalt.y + asphalt.h || b.ex > 1500) {
             b.route = buildRoute(b);
             b.state = 'driving'; b.dist = 0; b.v = 300 + b.ex;
           }
@@ -1213,10 +1230,10 @@
       if (b.state !== 'slot') continue;
       const r = slotRect(b.slot), left = b.cap - b.filled;
       const col = COLORS[b.color];
-      ctx.fillStyle = col.c; rr(r.x + 3, r.y + r.h + 3, r.w - 6, 18, 6); ctx.fill();
+      ctx.fillStyle = col.c; rr(r.x + 4, r.y + r.h - 12, r.w - 8, 17, 6); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = b.color === 9 || b.color === 3 ? '#0f172a' : '#fff';
       ctx.font = '900 13px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(left), r.x + r.w / 2, r.y + r.h + 12.5);
+      ctx.fillText(String(left), r.x + r.w / 2, r.y + r.h - 3.5);
     }
     // Passengers hopping on
     for (const p of G.particles) {
