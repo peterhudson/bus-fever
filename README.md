@@ -24,6 +24,7 @@ Special pieces show up as you go:
 - **Bomb buses (from level 58)** count down each time another bus leaves. Get them out before they hit zero, or defuse one for 100 coins.
 - **Locked buses (from level 60)** open when a bus the color of the padlock leaves the lot.
 - **Traffic cones (from level 64)** never move.
+- **Gates (from level 70)** sit in the lot like cones but open and close as buses leave. An N-gate is shut for N moves, then open for N moves. The badge counts the moves until it changes. Gates only go where the winning order finds them open.
 - **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
 
 Each level is set somewhere people line up for buses, from 12 themes that repeat: stadium, county fair, music festival, airport, factory, train station, ferry port, school, beach, ski resort, theme park and downtown.

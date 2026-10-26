@@ -154,6 +154,7 @@
       bombs: n >= 58 ? 0.05 + 0.2 * late(n) ** 2 : 0,   // share of buses that must leave within a number of moves
       locks: n >= 60 ? 0.06 + 0.06 * late(n) : 0,   // share of buses locked until a bus of the key color leaves
       cones: n >= 64 ? 2 + Math.round(4 * late(n)) : 0,  // fixed obstacles in the lot
+      gates: n >= 70 ? 1 + (n >= 82) + (n >= 94) : 0,   // barriers that open and close every few moves
     };
   }
   // Where the next bus out of a tunnel parks: right in front of its mouth
@@ -238,7 +239,53 @@
       take(gx, gy, w, h);
       buses.push(nb);
     }
+    // the empty cells left over, where gates can go
+    buses.free = [];
+    for (let yy = 0; yy < rows; yy++) for (let xx = 0; xx < cols; xx++) if (!used[yy * cols + xx]) buses.free.push([ox + (xx + 0.5) * C, oy + (yy + 0.5) * C]);
     return buses;
+  }
+
+  // Gates sit on empty cells. Gate n is shut for n moves, then open for n
+  // moves, and so on; phase shifts where in that cycle it starts. Moves are
+  // counted as buses leave the lot. Replay the winning order to see which
+  // move sends a bus through each empty cell, and only put a gate where it is
+  // open at every one of those moves, so the winning order still works.
+  const gateOpen = (t, moves) => Math.floor((moves + t.phase) / t.gate) % 2 === 1;
+  function placeGates(buses, tunnels, order, count, rng) {
+    const cells = buses.free.map(([x, y]) => ({ x, y, ang: 0, len: 10, wid: 10, hits: [], dirs: [] }));
+    const lot = buses.map((b) => ({ ...b, ref: b }));
+    const tq = tunnels.map((t) => t.queue.slice());
+    for (let i = 0; i < order.length; i++) {
+      const b = lot.find((o) => o.ref === order[i]);
+      if (!b) return;
+      for (const c of cells) if (pathHit(b, [c])) { c.hits.push(i); c.dirs.push(b.ang); }
+      lot.splice(lot.indexOf(b), 1);
+      for (const o of lot) if (o.flip) o.ang += Math.PI;
+      tunnels.forEach((t, k) => {
+        if (!tq[k].length) return;
+        const m = tunnelMouth(t, tq[k][0].len);
+        if (lot.some((o) => obbOverlap(m, o))) return;
+        const spec = tq[k].shift();
+        lot.push({ ...m, flip: spec.flip, ref: spec });
+      });
+    }
+    // busier cells first, then try the gate sizes in a random order
+    const cand = cells.filter((c) => c.hits.length).sort((a, c) => c.hits.length - a.hits.length + (rng() - 0.5) * 2);
+    let placed = 0;
+    for (const c of cand) {
+      if (placed >= count) break;
+      if (tunnels.some((t) => t.gate && Math.hypot(t.x - c.x, t.y - c.y) < 40)) continue;
+      const fits = [];
+      for (const n of [1, 2, 3]) for (let ph = 0; ph < 2 * n; ph++) {
+        const g = { gate: n, phase: ph };
+        if (c.hits.every((i) => gateOpen(g, i))) fits.push(g);
+      }
+      if (!fits.length) continue;
+      const g = fits[Math.floor(rng() * fits.length)];
+      // the barrier arm lies across the way the first bus through it goes
+      tunnels.push({ x: c.x, y: c.y, ang: 0, len: 10, wid: 10, cone: true, gate: g.gate, phase: g.phase, arm: c.dirs[0] + Math.PI / 2, lift: 0, queue: [] });
+      placed++;
+    }
   }
 
   // Clears the lot in a random order that the rules allow, turning buses
@@ -277,7 +324,7 @@
       const L = buildLevel(n, attempt, levelFeatures(n));
       if (L) return L;
     }
-    return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0 });
+    return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0, gates: 0 });
   }
 
   function buildLevel(n, attempt, feats) {
@@ -355,6 +402,8 @@
         if (keys.length) b.lock = keys[ri(keys.length)];
       }
     });
+
+    if (feats.gates && buses.free) placeGates(buses, tunnels, order, feats.gates, rng);
 
     // Passenger line
     const K = n < 6 ? 2 : n < 15 ? 3 : 4;
@@ -554,6 +603,7 @@
     // The carousel starts full; the left feeder line holds the first half of the rest
     for (let k = 0; k < G.ring.length && G.queue.length; k++) G.ring[k] = G.queue.shift();
     G.leftN = LANES * Math.ceil(G.queue.length / LANES / 2);
+    for (const t of G.tunnels) if (t.gate) t.lift = gateOpen(t, 0) ? 1 : 0;
     G.box = levelBox();
     fitLot();
     ringLayout();
@@ -569,7 +619,7 @@
   }
 
   // Obstacles in the lot: parked buses and tunnels
-  const obstacles = () => lotBuses().concat(G.tunnels);
+  const obstacles = () => lotBuses().concat(G.tunnels.filter((t) => !t.gate || !gateOpen(t, G.arrivals)));
 
   // A mystery bus shows its color once nothing blocks its way out
   function revealFree() {
@@ -622,7 +672,11 @@
       seen.lock = true;
       notes.push('<li><b>Locked buses 🔒</b> open when a bus the color of the padlock leaves the lot.</li>');
     }
-    if (G.tunnels.some((t) => t.cone) && !seen.cone) {
+    if (G.tunnels.some((t) => t.gate) && !seen.gate) {
+      seen.gate = true;
+      notes.push('<li><b>Gates 🚧</b> open and close as buses leave the lot. The number shows how many more moves until it changes.</li>');
+    }
+    if (G.tunnels.some((t) => t.cone && !t.gate) && !seen.cone) {
       seen.cone = true;
       notes.push('<li><b>Traffic cones</b> never move. Find a way around them.</li>');
     }
@@ -816,6 +870,7 @@
   // ---------- Update ----------
   function update(dt) {
     if (!G) return;
+    for (const t of G.tunnels) if (t.gate) t.lift += ((gateOpen(t, G.arrivals) ? 1 : 0) - t.lift) * Math.min(1, dt * 9);
     for (const b of G.buses) {
       if (b.shake > 0) b.shake = Math.max(0, b.shake - dt);
       if (b.flash > 0) b.flash = Math.max(0, b.flash - dt);
@@ -1119,6 +1174,34 @@
     ctx.restore();
   }
 
+  // A barrier arm across a cell, raised when open. The badge counts the moves
+  // until it changes.
+  function drawGate(t) {
+    const open = gateOpen(t, G.arrivals);
+    const left = t.gate - ((G.arrivals + t.phase) % t.gate);
+    ctx.save();
+    ctx.translate(lotX + t.x * ls, lotY + t.y * ls); ctx.scale(ls * 1.6, ls * 1.6);
+    ctx.fillStyle = open ? 'rgba(22,163,74,0.75)' : 'rgba(220,38,38,0.8)'; rr(-6, -6, 12, 12, 2.5); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.save();
+    ctx.rotate(t.arm);
+    ctx.fillStyle = '#1f2937';
+    ctx.beginPath(); ctx.arc(-6.5, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(6.5, 0, 1.6, 0, Math.PI * 2); ctx.fill();
+    // the arm swings up from its post at -6.5
+    // raised, it points up at you, so from above it looks short
+    ctx.translate(-6.5, 0); ctx.scale(1 - t.lift * 0.75, 1);
+    ctx.fillStyle = '#fff'; rr(0, -1.8, 13.5, 3.6, 1.5); ctx.fill();
+    ctx.fillStyle = '#ef4444';
+    for (let x = 1.5; x < 13; x += 4) ctx.fillRect(x, -1.8, 2, 3.6);
+    ctx.restore();
+    ctx.fillStyle = open ? '#16a34a' : '#dc2626';
+    ctx.beginPath(); ctx.arc(5.5, -5.5, 4.4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = '900 6.5px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(left), 5.5, -5.2);
+    ctx.restore();
+  }
+
   let clock = 0;
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1181,7 +1264,7 @@
     }
 
     // Parking lot pieces
-    for (const t of G.tunnels) (t.cone ? drawCone : drawTunnel)(t);
+    for (const t of G.tunnels) if (!t.gate) (t.cone ? drawCone : drawTunnel)(t);
 
     // People riding the carousel, bobbing as they march; new arrivals walk in
     // from the chute
@@ -1219,6 +1302,8 @@
         ctx.restore();
       }
     }
+    // Gates on top of parked buses so they are easy to spot
+    for (const t of G.tunnels) if (t.gate) drawGate(t);
     for (const b of G.buses) {
       if (b.state === 'slot' || b.state === 'leaving') drawBus(b, poseOf(b), 'seats');
     }
