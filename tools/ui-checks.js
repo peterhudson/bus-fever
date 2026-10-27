@@ -112,12 +112,13 @@ if (typeof module !== 'undefined') {
   module.exports = checkUI;
   if (require.main === module) (async () => {
     const { chromium } = require('playwright');
+    const checkAdvancedUI = require('./advanced-ui-checks');
     const browser = await chromium.launch();
     try {
       for (const [width, height, reducedMotion] of [[320, 667, 'no-preference'], [390, 844, 'no-preference'], [430, 932, 'no-preference'], [390, 844, 'reduce']]) {
         const page = await browser.newPage({ viewport: { width, height }, reducedMotion });
         await page.goto(process.env.URL || 'http://localhost:8123/');
-        const results = await page.evaluate(checkUI);
+        const results = [...await page.evaluate(checkUI), ...await page.evaluate(checkAdvancedUI)];
         console.log(`${width}×${height} (${reducedMotion}): ${results.length} checks passed`);
         await page.close();
       }

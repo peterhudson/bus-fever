@@ -1,6 +1,6 @@
 // Bump VERSION whenever game files change so phones pick up the update.
-const VERSION = 'bus-jam-v15';
-const FILES = ['./', 'index.html', 'game.js', 'scenery.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+const VERSION = 'bus-jam-v16';
+const FILES = ['./', 'index.html', 'advanced.js', 'game.js', 'scenery.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

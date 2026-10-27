@@ -10,8 +10,9 @@ const { chromium, devices } = require('playwright');
     const B = window.__bus, cv = document.getElementById('game'), fails = [];
     for (let lvl = from; lvl <= to; lvl++) {
       B.save.level = lvl; B.save.bays = 4; B.save.seenPieces = new Proxy({}, { get: () => true }); B.startLevel();
-      const G = B.G; let result = 'timeout';
-      for (let steps = 0; steps < 80000; steps++) {
+      const G = B.G; G.validating = true; let result = 'timeout';
+      if (G.rules) result = B.runSolution(0.02).won ? 'win' : 'stuck';
+      for (let steps = 0; !G.rules && steps < 80000; steps++) {
         B.update(0.02);
         if (G.won) { result = 'win'; break; }
         if (G.boom) { result = 'boom'; break; }
