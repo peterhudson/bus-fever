@@ -9,6 +9,41 @@ function checkAdvancedUI() {
   boost('vip'); press(b);
   check(b.state==='flying' && b.slot===0 && !b.link && !partner.link && partner.state==='lot', 'VIP separates exactly one linked bus');
   check(B.save.boosters.vip===2, 'Linked rescue spends one VIP');
+  G=start(131); b=G.buses.find(b=>b.link===1); G.slots[1]={};G.slots[2]={};G.slots[3]={};press(b);
+  check(G.linkFocus===1 && G.linkFocusT>0 && b.state==='lot', 'Tapping a linked bus highlights both partners without spending a move on failure');
+  G=start(171);
+  check(B.chuteGateState(0).open && !B.chuteGateState(1).open && B.chuteGateState(0).remaining===2,'Chute gates start retracted/open and extended/closed with two departures remaining');
+  for(const side of [0,1]) {
+    const gate=B.chuteGateGeometry(side),c=gate.counter,p=gate.p;
+    check(c.y>p.y && (side?c.x>p.x:c.x<p.x),'Gate counter is below and outside its chute');
+    const across=Math.abs((c.x-p.x)*-p.ty+(c.y-p.y)*p.tx);
+    check(across-c.r>22,'Gate counter clears the full passenger lane');
+    const r=$('#game').getBoundingClientRect(),button=$(side?'#btnShop':'#btnBoosters').getBoundingClientRect();
+    check(c.y+c.r<button.top-r.top || c.x+c.r<button.left-r.left || c.x-c.r>button.right-r.left,'Gate counter clears the Shop and Power-ups buttons');
+    check(side?gate.front<0:gate.front>=22,'Open steel gate retracts completely out of the lane');
+  }
+  const order=G.buses.slice().sort((a,b)=>a.seq-b.seq);B.tryDispatch(order[0],false);
+  check(B.chuteGateState(0).remaining===1 && B.chuteGateState(1).remaining===1,'Both chute gate counters decrement on a successful departure');
+  B.tryDispatch(order[1],false);B.update(.3);
+  check(!B.chuteGateState(0).open && B.chuteGateState(1).open && G.chuteSlide[1]>.9,'Two departures open the opposite chute gate');
+  G=start(124); const herd=G.rules.caravan;
+  check(herd.count>3 && B.paradeIndicator().positions===Math.round(herd.step/herd.spacing),'Parade badge shows positions per departure, independently of group length');
+  const drawMember=window.ParadeArt.draw;let members=0;
+  try{window.ParadeArt.draw=(...args)=>{members++;return drawMember(...args);};B.draw();}finally{window.ParadeArt.draw=drawMember;}
+  check(members===herd.count,'Only the current parade is drawn, with no future ghost groups');
+  const geometry=B.geometry,world=herd.bounds;
+  check(Math.abs(geometry.lotX+world.x0*geometry.ls-geometry.road.x0-20)<.01 && Math.abs(geometry.lotY+world.y0*geometry.ls-geometry.road.y0-20)<.01 && Math.abs(geometry.road.x1-geometry.lotX-world.x1*geometry.ls-20)<.01 && Math.abs(geometry.road.y1-geometry.lotY-world.y1*geometry.ls-20)<.01, 'Parade collision and artwork stay twenty pixels inside all four road centre lines');
+  const themes=window.Scenery;
+  check(themes.themeFor(121).wildlife==='savanna' && themes.themeFor(122).wildlife==='india' && themes.themeFor(124).parade==='horse' && themes.themeFor(226).parade==='penguin','Parades select wildlife elephants, fair horses and beach penguins');
+  const seen=new Set();for(let n=121;n<501;n++)if(window.Advanced.profile(n).caravan)seen.add(themes.themeFor(n).name);
+  check(seen.size===14,'Later parade levels visit all fourteen settings');
+  const art=document.createElement('canvas');art.width=56;art.height=56;const ac=art.getContext('2d');
+  const kinds=['elephant','horse','penguin','lion','flamingo','luggage','robot','train','seagull','duck','skier','dinosaur','dog'];
+  check(kinds.every(kind=>{ac.clearRect(0,0,56,56);window.ParadeArt.draw(ac,{x:28,y:28,angle:0,kind});return ac.getImageData(0,0,56,56).data.some((v,i)=>i%4===3&&v>0);}), 'All thirteen parade sprite designs render');
+  const first=G.buses.find(b=>b.seq===G.solution[0].ids[0]);B.tryDispatch(first,false);
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  check(reduced ? G.paradeT===0 && G.paradeMoves===G.arrivals : G.paradeT>0,'Parade movement animates and respects Reduce Motion');
+  B.update(.5);check(G.paradeMoves===G.arrivals,'The animated herd reaches the same position used for exit blocking');
   G=start(181); b=G.buses.find(b=>b.transfer); boost('vip'); press(b);
   check(b.state==='flying' && b.transferred && G.arrivals===1, 'VIP skips the transfer and clears its portal marker');
   G=start(171); b=G.buses[0]; Object.assign(b,{state:'slot',slot:1,color:0,cap:16,filled:8,stages:[{color:0,count:8},{color:1,count:8}]}); G.buses=[b];G.slots[1]=b;
@@ -21,7 +56,7 @@ function checkAdvancedUI() {
   check(a.color===2 && !a.stages && c.color===0 && c.stages[1].color===1, 'Shuffle moves complete two-stage routes without changing passenger demand');
   check(B.save.boosters.shuffle===2, 'Route shuffle spends one charge');
   G=start(210); $('#btnMenu').click(); $('[data-a="rules"]').click();
-  check($('#card').textContent.includes('Elephant parade') && $('#card').textContent.includes('Transfer tunnels'), 'Menu explains every rule in the combined level');
+  check($('#card').textContent.includes('Road parades') && $('#card').textContent.includes('Transfer tunnels'), 'Menu explains every rule in the combined level');
   $('[data-a="close"]').click();
   check(!G.modal, 'Rules close and resume play');
   const g=B.geometry;check(g.ringR-22>=18, 'Carousel island has at least 36 pixels of clear vertical space');

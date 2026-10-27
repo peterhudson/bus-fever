@@ -326,7 +326,7 @@
       for (let attempt = firstAttempt; attempt < firstAttempt + 160; attempt++) {
         const features = { mystery: advanced.teaching ? 0 : 0.15, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0, gates: 0, target: advanced.target, colors: advanced.colors };
         const L = buildLevel(n, attempt, features);
-        if (L && A.decorate(L, advanced, mulberry32(n * 997 + attempt * 31), { pathHit, obbOverlap, corners })) return L;
+        if (L && A.decorate(L, advanced, mulberry32(n * 997 + attempt * 31), { pathHit, obbOverlap, corners, roadGeometry })) return L;
       }
       throw new Error('Could not construct the advanced level');
     }
@@ -470,19 +470,37 @@
   }
   // Zoom the lot so this level's buses fill the asphalt. The box is taken
   // once at the start of a level so the view doesn't move while playing.
-  function fitLot() {
-    const in_ = ROAD + CURB + LOT_PAD, W = cw - 2 * in_, H = ch - lotTop - in_;
-    const B = (G && G.box) || { x0: 0, y0: 0, x1: LW, y1: LH };
-    ls = Math.min(W / (B.x1 - B.x0), H / (B.y1 - B.y0), 1.7);
-    lotX = cw / 2 - ((B.x0 + B.x1) / 2) * ls;
-    lotY = lotTop + H / 2 - ((B.y0 + B.y1) / 2) * ls;
+  const PARADE_INSET = 20, PARADE_CLEARANCE = 22;
+  function lotMetrics(box, parade = false) {
+    const in_ = ROAD + CURB + LOT_PAD + (parade ? PARADE_CLEARANCE : 0), top = slotTop + slotH + in_;
+    const W = cw - 2 * in_, H = ch - top - in_;
+    const scale = Math.min(W / (box.x1 - box.x0), H / (box.y1 - box.y0), 1.7);
+    return { scale, x: cw / 2 - (box.x0 + box.x1) / 2 * scale, y: top + H / 2 - (box.y0 + box.y1) / 2 * scale };
   }
-  function levelBox() {
+  function roadGeometry(L) {
+    const m = lotMetrics(levelBox(L.buses, L.tunnels), true);
+    return { scale:m.scale, bounds:{x0:(road.x0+PARADE_INSET-m.x)/m.scale, y0:(road.y0+PARADE_INSET-m.y)/m.scale, x1:(road.x1-PARADE_INSET-m.x)/m.scale, y1:(road.y1-PARADE_INSET-m.y)/m.scale} };
+  }
+  function fitLot() {
+    const c=G?.rules?.caravan;
+    if(c) {
+      // Keep the generated route and turn positions fixed during a resize.
+      // Fit that whole route inside the road, preserving the verified puzzle.
+      const b=c.bounds;
+      ls=Math.min((road.x1-road.x0-2*PARADE_INSET)/(b.x1-b.x0),(road.y1-road.y0-2*PARADE_INSET)/(b.y1-b.y0));
+      lotX=(road.x0+road.x1-(b.x0+b.x1)*ls)/2;
+      lotY=(road.y0+road.y1-(b.y0+b.y1)*ls)/2;
+    } else {
+      const m=lotMetrics((G && G.box)||{x0:0,y0:0,x1:LW,y1:LH});
+      ls=m.scale;lotX=m.x;lotY=m.y;
+    }
+  }
+  function levelBox(buses = G.buses, tunnels = G.tunnels) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     const add = (pts) => pts.forEach(([x, y]) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); });
-    G.buses.forEach((b) => add(corners(b.x, b.y, b.ang, b.len, BUS_W)));
-    G.tunnels.forEach((t) => add(corners(t.x, t.y, t.ang, t.len, t.wid)));
-    G.buses.filter(b => b.transfer).forEach(b => add(corners(b.transfer.x, b.transfer.y, b.transfer.ang, b.len, b.wid)));
+    buses.forEach((b) => add(corners(b.x, b.y, b.ang, b.len, BUS_W)));
+    tunnels.forEach((t) => add(corners(t.x, t.y, t.ang, t.len, t.wid)));
+    buses.filter(b => b.transfer).forEach(b => add(corners(b.transfer.x, b.transfer.y, b.transfer.ang, b.len, b.wid)));
     const m = 8;
     return { x0: Math.max(0, x0 - m), y0: Math.max(0, y0 - m), x1: Math.min(LW, x1 + m), y1: Math.min(LH, y1 + m) };
   }
@@ -502,7 +520,7 @@
     ringYT = ringYB - 2 * ringR;
     ringXL = (cw - L1) / 2; ringXR = ringXL + L1;
     ringLen = 2 * L1 + 2 * Math.PI * ringR;
-    $('#playfield').style.setProperty('--control-top', `${Math.round(ringYT + ringR - 26)}px`);
+    $('#playfield').style.setProperty('--control-top', `${Math.round(ringYT + ringR - 26 + (G.rules?.switchEvery ? 20 : 0))}px`);
     // The chutes: each comes down from off the top of the screen in a sweeping
     // curve and drops straight onto the belt at one of its top corners.
     // Stored as points from the belt end outwards, with distance along the way.
@@ -622,7 +640,8 @@
       shift: 0, feedShift: [0, 0], boardT: 0, particles: [], vipMode: false,
       ring: new Array(ringSeats(save.level)).fill(null), ringOff: 0, enter: {},
       modal: false, won: false, stuckT: 0, checkT: 0, failDismissed: false,
-      rules: L.rules, solution: L.solution, switched: false,
+      rules: L.rules ? { ...L.rules, caravan: L.rules.caravan ? { ...L.rules.caravan, bounds:{...L.rules.caravan.bounds} } : undefined } : undefined, solution: L.solution, switched: false,
+      paradeMoves:0, paradeFrom:0, paradeT:0, linkFocus:null, linkFocusT:0, chuteSlide:[0,0],
       validating, planning, recordedFeeds: [[], []], validationFailed: false,
     };
     for (let k = 0; k < G.ring.length && G.queue.length; k++) G.ring[k] = G.queue.shift();
@@ -630,6 +649,7 @@
     if (L.feeds) { G.queue = L.feeds[0].concat(L.feeds[1]); G.leftN = L.feeds[0].length; }
     for (const t of G.tunnels) if (t.gate) t.lift = gateOpen(t, 0) ? 1 : 0;
     G.box = levelBox(); fitLot(); ringLayout(); revealFree();
+    G.chuteSlide = [0,1].map(side => chuteGateState(side).open ? 1 : 0);
   }
   function runSolution(dt = 0.04, maxSteps = 120000) {
     let step = 0, index = 0;
@@ -906,6 +926,8 @@
     if (!b || b.state !== 'lot' || G.modal || G.won) return false;
     const fail = message => { if (notify && !G.validating) { toast(message); b.shake = 0.3; sound('bump'); } return false; };
     G.failDismissed = false;
+    if (b.link && notify) { G.linkFocus = b.link; G.linkFocusT = 1.5; }
+    if (G.paradeT > 0) return false;
     if (b.ice > 0) return fail(`Frozen! ${b.ice} more buses must leave first`);
     if (b.lock != null) return fail(`Locked: a ${COLOR_NAMES[b.lock]} bus must leave first`);
     if (G.vipMode) {
@@ -924,13 +946,13 @@
         return fail(group.length > 1 ? 'Clear both linked buses’ paths first' : 'Another bus is in the way');
       }
       const block = roadBlock(o);
-      if (block) return fail(block === 'road' ? `Road opens after ${G.rules.road.until - G.arrivals} more departures` : block === 'caravan' ? 'The elephants block this exit. Send another bus first.' : 'This barrier is closed. Dispatch the switch-pad bus.');
+      if (block) return fail(block === 'road' ? `Road opens after ${G.rules.road.until - G.arrivals} more departures` : block === 'caravan' ? 'The parade blocks this exit. Send another bus first.' : 'This barrier is closed. Dispatch the switch-pad bus.');
     }
     if (b.transfer && !b.transferred) {
       const destination = { ...b, ...b.transfer };
       if (obstacles().some(o => o !== b && obbOverlap(destination, o))) return fail('The transfer destination is occupied');
       b.from = lotPose(b); b.state = 'transferring'; b.t = 0; G.arrivals++;
-      revealFree(); sound('magic'); return true;
+      advanceParade(); revealFree(); sound('magic'); return true;
     }
     const slots = [];
     for (let i = 1; i <= bays(); i++) if (!G.slots[i]) slots.push(i);
@@ -938,7 +960,7 @@
     // Reserve both bays and remove both linked buses before advancing any rule.
     group.forEach((o, i) => { o.state = 'exiting'; G.slots[slots[i]] = o; });
     group.forEach((o, i) => sendToSlot(o, slots[i], false, true));
-    revealFree(); sound('go');
+    advanceParade(); revealFree(); sound('go');
     return true;
   }
 
@@ -966,12 +988,34 @@
       if (o.lock === b.color) { o.lock = null; o.flash = 0.4; }
       if (o.bomb > 0 && !--o.bomb && !G.boom) { G.boom = o; setTimeout(() => showBoom(o), 450); }
     }
-    if (!defer) { revealFree(); sound('go'); }
+    if (!defer) { advanceParade(); revealFree(); sound('go'); }
+  }
+
+  function advanceParade() {
+    if (!G.rules?.caravan) return;
+    G.paradeFrom = G.paradeMoves;
+    G.paradeT = G.validating || reducedMotion.matches ? 0 : 0.42;
+    if (!G.paradeT) G.paradeMoves = G.arrivals;
+  }
+  function chuteGateState(side) {
+    const empty = side ? G.queue.length === G.leftN : G.leftN === 0;
+    const both = G.leftN > 0 && G.queue.length > G.leftN;
+    return { open:!empty && activeFeed() === side, empty,
+      remaining:both && G.rules?.switchEvery ? G.rules.switchEvery - G.arrivals % G.rules.switchEvery : null };
   }
 
   // ---------- Update ----------
   function update(dt) {
     if (!G || G.modal) return;
+    G.linkFocusT = Math.max(0, G.linkFocusT - dt);
+    if (G.paradeT > 0) {
+      G.paradeT = reducedMotion.matches ? 0 : Math.max(0, G.paradeT - dt);
+      G.paradeMoves = lerp(G.paradeFrom, G.arrivals, easeInOut(1 - G.paradeT / 0.42));
+    }
+    if (G.rules?.switchEvery) G.chuteSlide = G.chuteSlide.map((lift, side) => {
+      const target = chuteGateState(side).open ? 1 : 0;
+      return reducedMotion.matches ? target : lerp(lift, target, Math.min(1, dt * 12));
+    });
     for (const t of G.tunnels) if (t.gate) t.lift += ((gateOpen(t, G.arrivals) ? 1 : 0) - t.lift) * Math.min(1, dt * 9);
     for (const b of G.buses) {
       if (b.shake > 0) b.shake = Math.max(0, b.shake - dt);
@@ -1104,7 +1148,7 @@
   function checkStuck(dt) {
     const waiting = G.queue.length > 0 || G.ring.some((c) => c !== null);
     if (G.won || G.modal || G.failDismissed || !waiting) { G.stuckT = 0; return; }
-    const busy = movingBuses() || G.particles.length || G.shift > 0.05 ||
+    const busy = G.paradeT > 0 || movingBuses() || G.particles.length || G.shift > 0.05 ||
       G.buses.some((b) => b.state === 'exiting' || b.state === 'driving' || b.state === 'flying' || (b.state === 'lot' && b.bumpT > 0));
     if (busy) { G.stuckT = 0; return; }
     G.checkT -= dt;
@@ -1260,7 +1304,7 @@
       ctx.restore();
     }
     if ((b.link || (b.transfer && !b.transferred)) && mode === 'arrow') {
-      ctx.save(); ctx.rotate(-pose.ang); ctx.fillStyle = b.link ? '#155e75' : '#0891b2';
+      ctx.save(); ctx.rotate(-pose.ang); ctx.fillStyle = b.link ? linkColor(b.link) : '#0891b2';
       rr(-10, W / 2 + 1, 20, 12, 4); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.font = '800 8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(b.link ? `↔${b.link}` : 'T ↗', 0, W / 2 + 7); ctx.restore();
@@ -1355,18 +1399,103 @@
     ctx.fillStyle = '#17283d'; ctx.font = '900 12px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(label, c.x, c.y + 0.5); ctx.restore();
   }
+  function linkColor(id) { return ['#087a86', '#824db3'][(id - 1) % 2]; }
+  function drawLinkedHighlights() {
+    const linked = lotBuses().filter(b => b.link), done = new Set();
+    for (const b of linked) {
+      const p = lotPose(b), focus = G.linkFocus === b.link && G.linkFocusT > 0;
+      const alpha = focus && !reducedMotion.matches ? 0.8 + Math.sin(sceneryClock * 5) * 0.2 : 0.75;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.ang); ctx.scale(p.s, p.s);
+      ctx.globalAlpha = alpha;
+      rr(-b.len / 2 - 1.5, -b.wid / 2 - 1.5, b.len + 3, b.wid + 3, 7);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = focus ? 5 : 3.5; ctx.stroke();
+      ctx.strokeStyle = linkColor(b.link); ctx.lineWidth = focus ? 2.7 : 1.7; ctx.stroke(); ctx.restore();
+      if (focus && !done.has(b.link)) {
+        done.add(b.link);
+        const partner = linked.find(o => o !== b && o.link === b.link);
+        if (!partner) continue;
+        const q = lotPose(partner);
+        ctx.save(); ctx.lineCap = 'round'; ctx.setLineDash([4, 5]);
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.stroke();
+        ctx.strokeStyle = linkColor(b.link); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+      }
+    }
+  }
+  function paradeIndicator() {
+    const c=G.rules.caravan, travel=A.caravanTravel(c,G.paradeMoves);
+    const p=A.caravanPoint(c,travel.center);
+    return { x:lotX+p.x*ls-p.ty*13, y:lotY+p.y*ls+p.tx*13,
+      angle:Math.atan2(p.ty,p.tx)+(travel.direction>0?0:Math.PI), positions:travel.positions };
+  }
+  function drawParade() {
+    const c=G.rules?.caravan;
+    if(!c)return;
+    const scale=c.spacing*ls/22, kind=window.Scenery.themeFor(save.level).parade||'elephant';
+    A.caravanMembers(c,G.paradeMoves).forEach((p,i)=>{
+      const stride=G.paradeT>0&&!reducedMotion.matches?Math.sin(sceneryClock*20+i):0;
+      window.ParadeArt.draw(ctx,{x:lotX+p.x*ls,y:lotY+p.y*ls,angle:p.facing,kind,stride,scale});
+    });
+    // One attached movement badge; the numeral stays upright on every side.
+    const badge=paradeIndicator();
+    ctx.save();ctx.translate(badge.x,badge.y);ctx.rotate(badge.angle);
+    ctx.fillStyle='#183c5540';rr(-17,-7,34,18,8);ctx.fill();
+    ctx.fillStyle='#245d73';rr(-17,-9,34,18,8);ctx.fill();
+    ctx.strokeStyle='#edf8f5';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.lineWidth=2;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();
+    ctx.moveTo(2,0);ctx.lineTo(11,0);ctx.moveTo(7,-4);ctx.lineTo(11,0);ctx.lineTo(7,4);ctx.stroke();
+    ctx.translate(-7,0);ctx.rotate(-badge.angle);ctx.fillStyle='#fff';
+    ctx.font='900 12px -apple-system, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(String(badge.positions),0,.5);ctx.restore();
+  }
+  function chuteGateGeometry(side) {
+    const p=chutePoint(side,3), outward=side?-1:1;
+    return { p, outward, angle:Math.atan2(p.ty,p.tx),
+      counter:{x:p.x+(side?37:-37),y:p.y+16,r:11},
+      front:lerp(-BELT_W/2+1,BELT_W/2+5,G.chuteSlide[side]), outer:BELT_W/2+5 };
+  }
+  function drawChuteGates() {
+    if(!G.rules?.switchEvery)return;
+    for(const side of [0,1]) {
+      const state=chuteGateState(side), gate=chuteGateGeometry(side), {p,counter,front,outer}=gate;
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(gate.angle);ctx.scale(1,gate.outward);
+      // The telescoping steel panel slides across the lane into its outer
+      // housing: down-left for the left chute, down-right for the right.
+      const metal=ctx.createLinearGradient(-5,0,5,0);
+      metal.addColorStop(0,'#657580');metal.addColorStop(.45,'#c0cbd1');metal.addColorStop(1,'#7f909a');
+      if(outer-front>.2) {
+        ctx.fillStyle='#243b4940';rr(-2,front+2,8,outer-front,2);ctx.fill();
+        ctx.fillStyle=metal;rr(-4,front,8,outer-front,2);ctx.fill();
+        ctx.strokeStyle='#415460';ctx.lineWidth=1.2;ctx.stroke();
+        ctx.strokeStyle='#71838e';ctx.lineWidth=1;
+        for(let i=1;i<6;i++){const y=lerp(front,outer,i/6);ctx.beginPath();ctx.moveTo(-3,y);ctx.lineTo(3,y);ctx.stroke();}
+        ctx.fillStyle='#435967';rr(-5,front-1,10,4,1.5);ctx.fill();
+      }
+      ctx.fillStyle='#718591';rr(-7,outer-2,14,12,3);ctx.fill();
+      ctx.fillStyle=metal;rr(-6,outer-3,12,10,2);ctx.fill();
+      ctx.strokeStyle='#425865';ctx.lineWidth=1.2;ctx.stroke();
+      for(const y of [outer,outer+4]){ctx.fillStyle='#435764';ctx.beginPath();ctx.arc(0,y,1,0,Math.PI*2);ctx.fill();}
+      ctx.restore();
+      // The counter's mounting arm and badge sit outside the passenger lane.
+      const mount={x:p.x-p.ty*gate.outward*(outer+4),y:p.y+p.tx*gate.outward*(outer+4)};
+      ctx.save();ctx.strokeStyle='#667d8b';ctx.lineWidth=3;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(mount.x,mount.y);ctx.lineTo(counter.x,counter.y);ctx.stroke();
+      ctx.fillStyle='#20374435';ctx.beginPath();ctx.arc(counter.x,counter.y+2,counter.r+1,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=state.empty?'#71828c':'#344c5d';ctx.beginPath();ctx.arc(counter.x,counter.y,counter.r,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#dbe6e9';ctx.lineWidth=2;ctx.stroke();
+      ctx.fillStyle='#fff';ctx.font='900 13px -apple-system, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(state.empty?'✓':state.remaining===null?'›':String(state.remaining),counter.x,counter.y+.5);ctx.restore();
+    }
+  }
+
   function drawAdvanced() {
     if (!G.rules) return;
     const r = G.rules;
     ctx.save();
-    // The island stays readable as riders pass around its outside.
-    ctx.fillStyle = 'rgba(255,255,255,0.88)'; rr(cw / 2 - 54, ringYT + ringR - 14, 108, 28, 8); ctx.fill();
-    ctx.fillStyle = '#334155'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '800 9px -apple-system, sans-serif';
-    ctx.fillText(`${G.arrivals} DEPARTURES`, cw / 2, ringYT + ringR - (r.switchEvery ? 5 : 0));
-    if (r.switchEvery) {
-      const count = r.switchEvery - G.arrivals % r.switchEvery, side = activeFeed();
-      ctx.font = '700 8px -apple-system, sans-serif';
-      ctx.fillText(`${side ? 'RIGHT' : 'LEFT'} CHUTE · ${count} TO SWITCH`, cw / 2, ringYT + ringR + 6);
+    if (!r.switchEvery) {
+      ctx.fillStyle = 'rgba(255,255,255,0.88)'; rr(cw / 2 - 54, ringYT + ringR - 14, 108, 28, 8); ctx.fill();
+      ctx.fillStyle = '#334155'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '800 9px -apple-system, sans-serif';
+      ctx.fillText(`${G.arrivals} DEPARTURES`, cw / 2, ringYT + ringR);
     }
     if (r.road && G.arrivals < r.road.until) {
       const z = { side: r.road.side, center: 0.5, half: 0.5 };
@@ -1374,17 +1503,6 @@
       for (const pos of [0.18, 0.82]) {
         const p = roadPoint({ side: z.side, position: pos });
         ctx.font = '18px sans-serif'; ctx.fillText('🚧', p.x, p.y);
-      }
-    }
-    if (r.caravan) {
-      const current = A.caravanZone(r.caravan, G.arrivals), next = A.caravanZone(r.caravan, G.arrivals + 1);
-      roadMark(next, '🐘', '#64748b', true, 22);
-      roadMark(current, '🐘', '#64748b', false, 22);
-      for (const delta of [-0.055, 0.055]) {
-        const p = roadPoint({ side: current.side, position: current.center + delta });
-        p.x += current.side === 0 ? -22 : current.side === 2 ? 22 : 0;
-        p.y += current.side === 1 ? -22 : 0;
-        ctx.font = '16px sans-serif'; ctx.fillText('🐘', p.x, p.y);
       }
     }
     if (r.switches) r.switches.zones.forEach((z, i) => roadMark(z, i ? 'B' : 'A', '#7c3aed', i !== (G.switched ? 1 : 0)));
@@ -1396,7 +1514,7 @@
         const partner = lotBuses().find(o => o !== b && o.link === b.link);
         if (partner) {
           const q = lotPose(partner);
-          ctx.strokeStyle = '#155e75'; ctx.lineWidth = 3; ctx.setLineDash([3, 5]);
+          ctx.strokeStyle = linkColor(b.link); ctx.lineWidth = 3; ctx.setLineDash([3, 5]);
           ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]);
         }
       }
@@ -1523,6 +1641,9 @@
         ctx.restore();
       }
     }
+    drawLinkedHighlights();
+    drawParade();
+    drawChuteGates();
     // Gates on top of parked buses so they are easy to spot
     for (const t of G.tunnels) if (t.gate) drawGate(t);
     for (const b of G.buses) {
@@ -1861,5 +1982,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for testing
-  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, feedEntry, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls }; } };
+  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
 })();
