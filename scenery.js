@@ -1,6 +1,6 @@
 // Sarah's Bus Jam. Copyright (C) 2026 Peter Hudson. Licensed under GPL-3.0-or-later, see LICENSE.
 // Background scenery: the plaza where the crowd waits (themed per level) and
-// the parking lot. Painted once per level into an offscreen canvas.
+// the parking lot. Detailed scenery is cached; lightweight props animate on top.
 'use strict';
 (() => {
   let ctx = null;
@@ -103,128 +103,335 @@
     }
   }
 
-  // ---------- Themes ----------
-  // Each theme paints the plaza (w x h, the top of the screen). `side` lists
-  // free spots beside the carousel where props look good.
+  // Miniature scenery is drawn in CSS pixels, with soft offset shadows and
+  // raised roofs. Only a few moving props are redrawn each frame.
+  function box(x, y, w, h, fill, radius = 3) {
+    ctx.fillStyle = fill; rr(x, y, w, h, radius); ctx.fill();
+  }
+  function line(points, color, width = 1) {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+    ctx.beginPath(); points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+  }
+  function poly(points, color) {
+    ctx.fillStyle = color; ctx.beginPath(); points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill();
+  }
+  function wash(w, h, top, bottom) {
+    const gradient = ctx.createLinearGradient(0, 0, w * 0.3, h);
+    gradient.addColorStop(0, top); gradient.addColorStop(1, bottom);
+    ctx.fillStyle = gradient; ctx.fillRect(0, 0, w, h);
+  }
+  function roof(x, y, w, h, color, trim = '#fff3d6') {
+    box(x + 4, y + 9, w, h, '#18383b25', 5);
+    box(x, y + 5, w, h, trim, 4);
+    box(x, y, w, h, color, 4);
+    poly([[x + 2, y + 2], [x + w / 2, y + h / 2], [x + w - 2, y + 2]], '#ffffff28');
+    poly([[x + 2, y + h - 2], [x + w / 2, y + h / 2], [x + w - 2, y + h - 2]], '#122b3b20');
+    line([[x + 5, y + h / 2], [x + w - 5, y + h / 2]], '#ffffff40');
+  }
+  function windows(x, y, count, color = '#acdce2', size = 5) {
+    for (let i = 0; i < count; i++) { box(x + i * (size + 4), y, size, 5, color, 1); }
+  }
+  function flowerbed(x, y, width, rnd, flowers = '#ffe5a1') {
+    box(x + 2, y + 3, width, 11, '#25493c20', 5);
+    box(x, y, width, 11, '#e6d9b7', 5); box(x + 2, y + 2, width - 4, 7, '#42855b', 4);
+    for (let i = 4; i < width - 3; i += 5) circle(x + i, y + 3 + rnd() * 5, 1.7, flowers);
+  }
+  function bench(x, y, vertical = false) {
+    ctx.save(); ctx.translate(x, y); if (vertical) ctx.rotate(Math.PI / 2);
+    box(-10, -3, 23, 9, '#1e3b3a22', 2);
+    line([[-7, -5], [-7, 6]], '#46686c', 2); line([[7, -5], [7, 6]], '#46686c', 2);
+    box(-11, -4, 22, 3, '#c48b4e', 1); box(-11, 0, 22, 3, '#e9b674', 1); ctx.restore();
+  }
+  function fence(x, y, w, color = '#f4edd3') {
+    line([[x, y + 2], [x + w, y + 2]], color, 2);
+    for (let v = 0; v <= w; v += 7) box(x + v, y - 3, 2, 11, color, 1);
+  }
+  function sign(x, y, text, color = '#27566b') {
+    ctx.font = '800 7px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const width = ctx.measureText(text).width + 14;
+    box(x - width / 2, y - 6, width, 13, '#17344222', 3);
+    box(x - width / 2, y - 8, width, 13, color, 3);
+    ctx.fillStyle = '#fff9e6'; ctx.fillText(text, x, y - 1);
+  }
+  function flag(x, y, color, time = 0) {
+    line([[x, y], [x, y + 22]], '#f7f4df', 2);
+    const flutter = Math.sin(time * 1.8) * 2;
+    poly([[x + 1, y], [x + 17, y + 2 + flutter], [x + 15, y + 12 + flutter], [x + 1, y + 10]], color);
+    line([[x + 2, y + 2], [x + 13, y + 4 + flutter]], '#ffffff50', 1);
+  }
+  function plane(x, y, scale = 1) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+    ctx.translate(2, 3);
+    poly([[-27, 0], [-5, -4], [4, -23], [11, -23], [7, -3], [24, -2], [28, -10], [32, -10], [30, 0], [32, 10], [28, 10], [24, 2], [7, 3], [11, 23], [4, 23], [-5, 4]], '#1c45502b');
+    ctx.translate(-2, -3);
+    poly([[-27, 0], [-5, -4], [4, -23], [11, -23], [7, -3], [24, -2], [28, -10], [32, -10], [30, 0], [32, 10], [28, 10], [24, 2], [7, 3], [11, 23], [4, 23], [-5, 4]], '#f7fcff');
+    line([[-17, 0], [25, 0]], '#2a87ac', 2); box(-19, -2, 4, 4, '#2d536a', 1);
+    ctx.restore();
+  }
+  function ferry(x, y) {
+    ctx.save(); ctx.translate(x, y);
+    line([[-45, -6], [-35, -3]], '#ffffff70', 2); line([[-47, 5], [-36, 3]], '#ffffff70', 2);
+    box(-32, -12, 65, 28, '#08597433', 11);
+    box(-32, -15, 65, 28, '#f9f4db', 11); box(-28, -11, 54, 20, '#326e91', 7);
+    box(-21, -8, 39, 14, '#fffdf1', 3); windows(-16, -4, 4, '#64b9ca', 4);
+    box(-5, -7, 10, 12, '#ef785f', 2); line([[23, -8], [23, 5]], '#e7c477', 2);
+    ctx.restore();
+  }
+  function taxi(x, y, color = '#f5c557') {
+    box(x + 2, y + 3, 23, 11, '#18313f30', 4); box(x, y, 23, 11, color, 4);
+    box(x + 6, y + 1, 10, 9, '#325869', 2); box(x + 9, y + 2, 4, 7, color, 1);
+    circle(x + 2, y + 2, 1, '#fff2b8'); circle(x + 2, y + 9, 1, '#fff2b8');
+  }
+
   const THEMES = [
-    { name: 'Stadium', icon: '🏟️', plaza(w, h, rnd, side) {
-      stripes(w, h, '#5fbf5a', '#55b350', 22, true);
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(w / 2, h * 0.45, Math.min(w, h) * 0.22, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.stroke();
-      // stands along the top
-      for (let r = 0; r < 3; r++) { ctx.fillStyle = ['#94a3b8', '#a8b4c6', '#bcc6d4'][r]; ctx.fillRect(0, r * 9, w, 9); }
-      speckle(w, 27, rnd, w / 3, 'rgba(239,68,68,0.8)', 1.4); speckle(w, 27, rnd, w / 4, 'rgba(59,130,246,0.8)', 1.4);
-      side.forEach((p) => { ctx.fillStyle = '#f8fafc'; rr(p.x - 9, p.y - 6, 18, 12, 2); ctx.fill(); ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; ctx.stroke(); });
-    } },
-    { name: 'County fair', icon: '🎡', plaza(w, h, rnd, side) {
-      ctx.fillStyle = '#86cf6a'; ctx.fillRect(0, 0, w, h);
-      speckle(w, h, rnd, w / 2, 'rgba(255,255,255,0.35)', 1);
-      ctx.fillStyle = '#d9b77c'; ctx.fillRect(0, h * 0.62, w, 14);  // dirt path
-      bunting(0, 10, w, 10, 14, ['#ef4444', '#facc15', '#3b82f6', '#22c55e']);
-      side.forEach((p, i) => (i % 2 ? tent(p.x, p.y, 22, '#ef4444', '#fff') : shrub(p.x, p.y, 1.2)));
-      // ferris wheel in a corner
-      const fx = w * 0.1, fy = h * 0.32, fr = Math.min(28, w * 0.09);
-      ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(fx, fy, fr, 0, Math.PI * 2); ctx.stroke();
-      for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + Math.cos(a) * fr, fy + Math.sin(a) * fr); ctx.stroke(); circle(fx + Math.cos(a) * fr, fy + Math.sin(a) * fr, 3.5, ['#ef4444', '#facc15', '#3b82f6', '#a855f7'][k % 4]); }
-    } },
-    { name: 'Music festival', icon: '🎸', plaza(w, h, rnd, side) {
-      const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#3b2a6b'); g.addColorStop(1, '#6d4fa8');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-      // stage lights sweeping down
-      ['rgba(244,114,182,0.25)', 'rgba(96,165,250,0.25)', 'rgba(250,204,21,0.22)'].forEach((c, i) => {
-        const x = w * (0.2 + i * 0.3);
-        ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x - 60 + i * 30, h); ctx.lineTo(x + 20 + i * 30, h); ctx.closePath(); ctx.fill();
-      });
-      speckle(w, h, rnd, w / 2, 'rgba(255,255,255,0.5)', 0.9);
-      side.forEach((p, i) => tent(p.x, p.y, 20, ['#f472b6', '#38bdf8', '#facc15'][i % 3], '#1e1b4b'));
-    } },
-    { name: 'Airport', icon: '✈️', plaza(w, h, rnd, side) {
-      ctx.fillStyle = '#9ca3af'; ctx.fillRect(0, 0, w, h);
-      speckle(w, h, rnd, w, 'rgba(255,255,255,0.12)', 1.2);
-      ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
-      ctx.beginPath(); ctx.moveTo(0, h * 0.18); ctx.lineTo(w, h * 0.18); ctx.stroke(); ctx.setLineDash([]);
-      // a parked plane in a corner, from above
-      const px = w * 0.86, py = h * 0.36, s = Math.min(1.2, w / 330);
-      ctx.fillStyle = 'rgba(15,23,42,0.18)'; ctx.beginPath(); ctx.ellipse(px + 4, py + 6, 8 * s, 34 * s, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#f8fafc'; ctx.beginPath(); ctx.ellipse(px, py, 7 * s, 32 * s, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(px, py - 6 * s); ctx.lineTo(px + 30 * s, py + 6 * s); ctx.lineTo(px - 30 * s, py + 6 * s); ctx.closePath(); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(px, py + 22 * s); ctx.lineTo(px + 12 * s, py + 30 * s); ctx.lineTo(px - 12 * s, py + 30 * s); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#2563eb'; ctx.fillRect(px - 1.5 * s, py - 26 * s, 3 * s, 50 * s);
-      side.forEach((p) => { ctx.fillStyle = '#f97316'; rr(p.x - 6, p.y - 8, 12, 16, 2); ctx.fill(); });  // baggage carts
-    } },
-    { name: 'Factory', icon: '🏭', plaza(w, h, rnd, side) {
-      tiles(w, h, '#b8b1a6', 'rgba(87,83,78,0.25)', 24);
-      ctx.fillStyle = '#facc15'; for (let x = 0; x < w; x += 16) { ctx.save(); ctx.translate(x, h * 0.86); ctx.rotate(-0.6); ctx.fillRect(0, 0, 6, 12); ctx.restore(); }
-      ctx.fillStyle = '#7c2d12'; ctx.fillRect(0, 0, w, 16); ctx.fillStyle = '#9a3412';
-      for (let x = 0; x < w; x += 14) ctx.fillRect(x, 0, 12, 6);
-      side.forEach((p) => { circle(p.x + 2, p.y + 3, 9, 'rgba(15,23,42,0.18)'); circle(p.x, p.y, 9, '#64748b'); circle(p.x, p.y, 5, '#334155'); });  // chimneys from above
-    } },
-    { name: 'Train station', icon: '🚆', plaza(w, h, rnd, side) {
-      tiles(w, h, '#d6d3d1', 'rgba(120,113,108,0.25)', 18);
-      ctx.fillStyle = '#facc15'; ctx.fillRect(0, h * 0.2, w, 4);
-      ctx.fillStyle = '#78716c'; ctx.fillRect(0, 0, w, h * 0.2);
-      ctx.fillStyle = '#a8a29e'; for (let x = 0; x < w; x += 10) ctx.fillRect(x, 2, 5, h * 0.2 - 4);  // sleepers
-      ctx.fillStyle = '#e7e5e4'; ctx.fillRect(0, h * 0.06, w, 2); ctx.fillRect(0, h * 0.14, w, 2);  // rails
-      side.forEach((p) => { ctx.fillStyle = '#1e3a8a'; rr(p.x - 10, p.y - 4, 20, 8, 2); ctx.fill(); });  // benches
-    } },
-    { name: 'Ferry port', icon: '⛴️', plaza(w, h, rnd, side) {
-      ctx.fillStyle = '#c9b48a'; ctx.fillRect(0, 0, w, h);  // boardwalk
-      ctx.strokeStyle = 'rgba(120,85,40,0.35)'; ctx.lineWidth = 1;
-      for (let y = 0.5; y < h; y += 8) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-      const sea = h * 0.3;
-      ctx.fillStyle = '#38bdf8'; ctx.fillRect(0, 0, w, sea); waves(w, sea, rnd, 'rgba(255,255,255,0.55)');
-      // ferry
-      const fx = w * 0.82, fy = sea * 0.5;
-      ctx.fillStyle = '#f8fafc'; rr(fx - 34, fy - 9, 68, 18, 9); ctx.fill(); ctx.fillStyle = '#ef4444'; rr(fx - 14, fy - 5, 22, 10, 3); ctx.fill();
-      side.forEach((p) => { circle(p.x, p.y, 5, '#334155'); circle(p.x, p.y, 2.5, '#94a3b8'); });  // bollards
-    } },
-    { name: 'School', icon: '🏫', plaza(w, h, rnd, side) {
-      ctx.fillStyle = '#e8b796'; ctx.fillRect(0, 0, w, h);  // brick-red playground
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2;
-      // hopscotch and four square
-      for (let i = 0; i < 5; i++) ctx.strokeRect(14, 14 + i * 14, 14, 14);
-      ctx.strokeRect(w - 54, 14, 40, 40); ctx.beginPath(); ctx.moveTo(w - 34, 14); ctx.lineTo(w - 34, 54); ctx.moveTo(w - 54, 34); ctx.lineTo(w - 14, 34); ctx.stroke();
-      side.forEach((p) => tree(p.x, p.y, 0.9));
-    } },
-    { name: 'Beach', icon: '🏖️', plaza(w, h, rnd, side) {
-      ctx.fillStyle = '#f5dfa3'; ctx.fillRect(0, 0, w, h); speckle(w, h, rnd, w, 'rgba(180,140,60,0.25)', 0.9);
-      ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, 0); ctx.lineTo(w, h * 0.14);
-      for (let x = w; x >= 0; x -= 20) ctx.quadraticCurveTo(x - 5, h * 0.18, x - 10, h * 0.14);
-      ctx.closePath(); ctx.fill();
-      side.forEach((p, i) => {
-        if (i % 2) palm(p.x, p.y, 1);
-        else { ctx.fillStyle = 'rgba(15,23,42,0.15)'; ctx.beginPath(); ctx.arc(p.x + 3, p.y + 4, 11, 0, Math.PI * 2); ctx.fill(); tent(p.x, p.y, 20, '#f43f5e', '#fff'); }
-      });
-    } },
-    { name: 'Ski resort', icon: '⛷️', plaza(w, h, rnd, side) {
-      ctx.fillStyle = '#f1f5f9'; ctx.fillRect(0, 0, w, h); speckle(w, h, rnd, w / 2, 'rgba(148,163,184,0.35)', 1);
-      ctx.strokeStyle = 'rgba(148,163,184,0.5)'; ctx.lineWidth = 1;
-      for (let i = 0; i < 6; i++) { const x = rnd() * w; ctx.beginPath(); ctx.moveTo(x, 0); ctx.bezierCurveTo(x + 30, h * 0.3, x - 30, h * 0.6, x + 10, h); ctx.stroke(); }  // ski tracks
-      side.forEach((p) => pine(p.x, p.y, 1.1, true));
-      pine(w * 0.06, h * 0.2, 1.2, true); pine(w * 0.94, h * 0.25, 1.2, true);
-    } },
-    { name: 'Theme park', icon: '🎢', plaza(w, h, rnd, side) {
-      tiles(w, h, '#fde68a', 'rgba(217,119,6,0.18)', 20);
-      // roller coaster track snaking across the top
-      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(0, 18); for (let x = 0; x <= w; x += 30) ctx.quadraticCurveTo(x + 15, x % 60 ? 4 : 34, x + 30, 18); ctx.stroke();
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.stroke(); ctx.setLineDash([]);
-      side.forEach((p, i) => (i % 2 ? circle(p.x, p.y, 7, ['#f472b6', '#60a5fa', '#a78bfa'][i % 3]) : shrub(p.x, p.y, 1.1)));  // balloons and shrubs
-    } },
-    { name: 'Downtown', icon: '🏙️', plaza(w, h, rnd, side) {
-      tiles(w, h, '#cbd5e1', 'rgba(100,116,139,0.25)', 16);
-      // rooftops along the top
-      let x = 0;
-      while (x < w) {
-        const bw = 30 + rnd() * 30, c = ['#64748b', '#475569', '#94a3b8', '#7c8aa0'][Math.floor(rnd() * 4)];
-        ctx.fillStyle = c; ctx.fillRect(x, 0, bw - 3, 18 + rnd() * 10);
-        ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(x + 4, 4, 6, 6);
-        x += bw;
+    { name: 'Stadium', icon: '🏟️', garden: '#94c781', asphalt: '#a3b3ac', curb: '#e2e6ce', plaza(w, h, rnd) {
+      stripes(w, h, '#82bd74', '#8bc57b', 23, true);
+      ctx.strokeStyle = '#df936e'; ctx.lineWidth = 16; ctx.beginPath(); ctx.ellipse(w / 2, 80, w * 0.4, 64, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#f8e3c3'; ctx.lineWidth = 1;
+      for (const r of [60, 65, 70]) { ctx.beginPath(); ctx.ellipse(w / 2, 80, w * 0.4, r, 0, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.strokeStyle = '#f4f6dbb0'; ctx.strokeRect(w / 2 - 62, 32, 124, 93);
+      ctx.beginPath(); ctx.arc(w / 2, 79, 20, 0, Math.PI * 2); ctx.stroke(); line([[w / 2 - 62, 79], [w / 2 + 62, 79]], '#f4f6dbb0');
+      roof(w / 2 - 65, 5, 130, 29, '#4f8196');
+      for (let row = 0; row < 3; row++) {
+        for (let i = 0; i < 18; i++) box(w / 2 - 59 + i * 6.5, 9 + row * 7, 4, 4, ['#ffd77c', '#e96f65', '#fff4dc', '#67bec5'][(i + row) % 4], 1);
       }
-      side.forEach((p) => tree(p.x, p.y, 0.8));
+      sign(w / 2, 15, 'HOME  2 : 1  AWAY', '#304c5c');
+      [20, w - 20].forEach(x => { tree(x, 82, 1.2); bench(x, 109); });
+      fence(12, h - 12, 40); fence(w - 52, h - 12, 40);
+    } },
+    { name: 'County fair', icon: '🎡', garden: '#9cc782', asphalt: '#b2b3a1', curb: '#f3dfb2', plaza(w, h, rnd) {
+      wash(w, h, '#a5cf7c', '#cadb9e');
+      line([[0, 99], [w * 0.3, 82], [w * 0.7, 82], [w, 110]], '#efd4a1', 26);
+      line([[w / 2, 58], [w / 2, h]], '#f5dfb5', 23);
+      for (const [x, c] of [[28, '#f2807c'], [w - 29, '#76bbd2'], [w / 2 - 77, '#d18cb4'], [w / 2 + 77, '#eebc55']]) {
+        tent(x, 57, 28, c, '#fff2cf'); box(x - 11, 72, 22, 10, c, 2); windows(x - 7, 73, 2, '#fff3d2');
+      }
+      line([[w / 2 - 16, 84], [w / 2, 42], [w / 2 + 16, 84]], '#6a8e9c', 4);
+      box(w / 2 - 24, 82, 48, 8, '#e7bf79', 3);
+      bunting(0, 10, w, 10, 18, ['#f38181', '#f3ca62', '#68b8d0', '#b194cf']);
+      flowerbed(9, h - 17, 42, rnd); flowerbed(w - 51, h - 17, 42, rnd, '#f4b0a7');
+      sign(w / 2, 105, 'THE FAIR', '#bd7167');
+    } },
+    { name: 'Music festival', icon: '🎸', garden: '#777298', asphalt: '#9a9dac', curb: '#c8c5d8', plaza(w, h, rnd) {
+      wash(w, h, '#343653', '#8a7698');
+      speckle(w, h, rnd, 100, '#f8dfaa60', 0.8);
+      roof(w / 2 - 68, 10, 136, 47, '#4d5376', '#a59cb9');
+      box(w / 2 - 48, 19, 96, 31, '#25283f', 3);
+      for (const x of [w / 2 - 61, w / 2 + 50]) {
+        box(x, 24, 11, 26, '#20283b', 2); circle(x + 5.5, 31, 3, '#576780'); circle(x + 5.5, 43, 3, '#576780');
+      }
+      line([[w / 2 - 68, 13], [w / 2 + 68, 13]], '#b0b0c8', 2);
+      for (let i = 0; i < 7; i++) circle(w / 2 - 59 + i * 20, 13, 2, ['#f5a7d9', '#9ae5ed', '#ffe09b'][i % 3]);
+      [25, w - 25].forEach((x, i) => { tent(x, 65, 30, i ? '#66bbce' : '#da8eae', '#f8e4c7'); bench(x, 91); });
+      bunting(0, 4, w, 4, 5, ['#f7d89d', '#eaa3bf', '#a7d9e4']);
+      sign(w / 2, 63, 'LIVE TONIGHT', '#69557b');
+    } },
+    { name: 'Airport', icon: '✈️', garden: '#b5c9ba', asphalt: '#aab5be', curb: '#e0e6df', plaza(w, h, rnd) {
+      tiles(w, h, '#bfcecd', '#8aa3a429', 30);
+      box(0, 76, w, 31, '#72939b', 0);
+      ctx.setLineDash([10, 10]); line([[0, 92], [w, 92]], '#f9d580', 2); ctx.setLineDash([]);
+      roof(w / 2 - 70, 12, 140, 38, '#6195a9', '#e7edf0');
+      for (let i = 0; i < 6; i++) { box(w / 2 - 62 + i * 21, 17, 15, 23, '#94ced7', 2); line([[w / 2 - 61 + i * 21, 18], [w / 2 - 49 + i * 21, 38]], '#d0eef375'); }
+      box(w / 2 - 17, 45, 34, 11, '#edf6ef', 2); sign(w / 2, 61, 'DEPARTURES', '#48768a');
+      for (const x of [22, w - 22]) { roof(x - 10, 17, 20, 23, '#729bae'); circle(x, 20, 8, '#c0e6e4'); line([[x, 12], [x, 3]], '#637d91', 2); }
+      for (const x of [20, w - 34]) { box(x, 119, 14, 8, '#eab570', 2); box(x, 130, 14, 8, '#e0a563', 2); }
+      flowerbed(10, h - 17, 40, rnd); flowerbed(w - 50, h - 17, 40, rnd);
+    } },
+    { name: 'Factory', icon: '🏭', garden: '#b5bda2', asphalt: '#b0b2aa', curb: '#e6d7b8', plaza(w, h, rnd) {
+      tiles(w, h, '#c8c2b0', '#938c7622', 22);
+      roof(w / 2 - 65, 25, 130, 38, '#bb7864', '#e0b894');
+      for (let i = 0; i < 5; i++) {
+        const x = w / 2 - 64 + i * 26;
+        poly([[x, 26], [x + 23, 10], [x + 23, 26]], '#e1aa88'); line([[x + 3, 25], [x + 20, 14]], '#b4d2ce', 3);
+      }
+      windows(w / 2 - 56, 52, 12, '#ecd29c', 5);
+      for (const x of [w / 2 - 43, w / 2 + 40]) { box(x - 5, 5, 10, 25, '#926555', 2); box(x - 6, 5, 12, 5, '#d9b39a', 1); }
+      sign(w / 2, 76, 'WORKS No. 05', '#62796e');
+      for (const x of [20, w - 35]) {
+        box(x + 2, 52, 23, 25, '#203b3b22', 3); box(x, 48, 23, 25, '#9aaba8', 3);
+        circle(x + 11, 59, 8, '#c7d1c6'); circle(x + 11, 59, 5, '#7e9693');
+        box(x, 88, 20, 14, '#c7915b', 2); line([[x + 2, 90], [x + 18, 100]], '#f2d7a5');
+      }
+      for (let x = 0; x < w; x += 14) poly([[x, h - 8], [x + 5, h - 8], [x + 11, h], [x + 6, h]], '#e8c770');
+    } },
+    { name: 'Train station', icon: '🚆', garden: '#bdc9ae', asphalt: '#acb4b6', curb: '#e1dece', plaza(w, h, rnd) {
+      tiles(w, h, '#e0d6bb', '#b0a38725', 19);
+      box(0, 9, w, 37, '#9b9f90', 0);
+      for (let x = 0; x < w; x += 11) box(x, 12, 4, 31, '#777f74', 0);
+      line([[0, 17], [w, 17]], '#e1e7df', 2); line([[0, 38], [w, 38]], '#e1e7df', 2);
+      line([[0, 50], [w, 50]], '#f4c76a', 4);
+      roof(w / 2 - 70, 65, 140, 25, '#668e80', '#e0b985');
+      for (let x = w / 2 - 60; x < w / 2 + 70; x += 20) line([[x, 68], [x, 87]], '#b4d0b860');
+      sign(w / 2, 74, 'CENTRAL STATION', '#3d655f');
+      [22, w - 22].forEach(x => { bench(x, 72); flowerbed(x - 13, 93, 26, rnd, '#e8aa96'); });
+      circle(w / 2, 110, 9, '#f5edce'); circle(w / 2, 110, 7, '#fffaf0'); line([[w / 2, 105], [w / 2, 110], [w / 2 + 4, 112]], '#546e70', 1.3);
+    } },
+    { name: 'Ferry port', icon: '⛴️', garden: '#b9cdb9', asphalt: '#a4b5b5', curb: '#e3dbbb', plaza(w, h, rnd) {
+      wash(w, h, '#4bafba', '#91cfc4'); waves(w, h, rnd, '#e5f4db45');
+      box(w / 2 - 52, 69, 104, h, '#ba9d77', 3);
+      for (let y = 73; y < h; y += 7) line([[w / 2 - 50, y], [w / 2 + 50, y]], '#ead4a580');
+      for (const x of [w / 2 - 48, w / 2 + 48]) for (let y = 74; y < h; y += 23) { circle(x, y, 3, '#725e4e'); circle(x, y - 1, 1.5, '#dcc2a0'); }
+      roof(w / 2 - 37, 85, 74, 30, '#73958d', '#e5d2a3'); sign(w / 2, 101, 'FERRY TERMINAL', '#426c73');
+      for (const x of [23, w - 23]) {
+        circle(x, 81, 16, '#e0d0a5'); circle(x + 3, 81, 9, '#274e5f25');
+        circle(x, 77, 10, '#f5e6ca'); circle(x, 77, 7, '#df7e69'); circle(x, 77, 4, '#f6d488');
+      }
+      [17, w - 17].forEach(x => { circle(x, 26, 3, '#f3bb78'); circle(x, 26, 1.2, '#fff2cc'); });
+    } },
+    { name: 'School', icon: '🏫', garden: '#a5c78e', asphalt: '#b5b0a5', curb: '#e5d5b7', plaza(w, h, rnd) {
+      wash(w, h, '#b0cf91', '#d5ddac');
+      box(w / 2 - 74, 65, 148, 80, '#d9ae8c', 8);
+      roof(w / 2 - 64, 20, 128, 36, '#c27d60', '#f0cb98');
+      windows(w / 2 - 55, 44, 12, '#aad2cb', 5);
+      roof(w / 2 - 18, 10, 36, 50, '#d69d65', '#fae0ae');
+      box(w / 2 - 7, 47, 14, 15, '#5f8781', 2);
+      circle(w / 2, 28, 7, '#fff4da'); line([[w / 2, 24], [w / 2, 28], [w / 2 + 3, 30]], '#7a6954', 1.2);
+      for (let i = 0; i < 4; i++) { ctx.strokeStyle = '#fff4d8b0'; ctx.lineWidth = 1; ctx.strokeRect(w / 2 - 48, 77 + i * 11, 11, 11); }
+      ctx.strokeRect(w / 2 + 26, 79, 27, 27); line([[w / 2 + 40, 79], [w / 2 + 40, 106]], '#fff4d8b0');
+      [22, w - 22].forEach(x => { tree(x, 45, 1.5, '#5e9c68', '#88b97b'); bench(x, 80); });
+      fence(8, h - 14, 43); fence(w - 51, h - 14, 43);
+    } },
+    { name: 'Beach', icon: '🏖️', garden: '#dccf99', asphalt: '#b6b7a9', curb: '#f1dfb2', plaza(w, h, rnd) {
+      wash(w, h, '#f3dda7', '#f8e7be'); speckle(w, h, rnd, 160, '#caa87535', 0.8);
+      wash(w, 90, '#41a8b7', '#82d1c6');
+      ctx.fillStyle = '#f3dda7'; ctx.beginPath(); ctx.moveTo(0, 81); ctx.bezierCurveTo(w * 0.3, 109, w * 0.6, 57, w, 86); ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.fill();
+      for (const [x, color] of [[26, '#e98e83'], [w - 26, '#71b7c7'], [w / 2 + 39, '#e9b85e']]) { box(x - 6, 100, 13, 22, '#ffffffb0', 2); tent(x, 93, 23, color, '#fff0ca'); }
+      palm(20, 42, 1.3); palm(w - 22, 38, 1.5);
+      roof(w / 2 - 22, 110, 44, 23, '#d9a16e', '#f5e1bb'); sign(w / 2, 123, 'SURF CLUB', '#548c8c');
+      for (let i = 0; i < 7; i++) circle(9 + rnd() * (w - 18), 97 + rnd() * 28, 1.5, '#fff6dc');
+    } },
+    { name: 'Ski resort', icon: '⛷️', garden: '#c8dce0', asphalt: '#acb9c3', curb: '#edf4f3', plaza(w, h, rnd) {
+      wash(w, h, '#b4d2df', '#ecf2e9');
+      for (let i = -1; i < 6; i++) {
+        const x = i * w / 4, peak = 5 + (i % 2) * 12;
+        poly([[x - 60, 91], [x + 20, peak], [x + 94, 91]], '#9ebbc7');
+        poly([[x + 20, peak], [x + 94, 91], [x + 20, 70]], '#8eabb9');
+        poly([[x - 4, peak + 28], [x + 20, peak], [x + 44, peak + 28], [x + 25, peak + 21], [x + 12, peak + 32]], '#f6f5e9');
+      }
+      poly([[0, 84], [w * 0.35, 64], [w, 108], [w, h], [0, h]], '#e9f1e9');
+      roof(w / 2 - 38, 76, 76, 33, '#9f7665', '#d3bfa0');
+      poly([[w / 2 - 41, 84], [w / 2, 61], [w / 2 + 41, 84]], '#fbf7e9');
+      windows(w / 2 - 27, 96, 6, '#f6d090', 5); sign(w / 2, 115, 'ALPINE LODGE', '#718d93');
+      for (const x of [17, 38, w - 18, w - 39]) pine(x, 90 + (x % 3) * 9, 1.4, true);
+      line([[0, 22], [w, 40]], '#5f7f8b', 1.5);
+      line([[14, 21], [14, 72]], '#7799a6', 3); line([[w - 14, 39], [w - 14, 83]], '#7799a6', 3);
+    } },
+    { name: 'Theme park', icon: '🎢', garden: '#bec695', asphalt: '#b2acb5', curb: '#e9d8c3', plaza(w, h, rnd) {
+      wash(w, h, '#d9d9a4', '#e9ddb5');
+      line([[0, 103], [w / 2, 75], [w, 103]], '#efc4b0', 26);
+      roof(w / 2 - 29, 44, 58, 39, '#c49bb2', '#f8dec0');
+      for (const [dx, tall] of [[-32, 32], [0, 48], [32, 32]]) {
+        box(w / 2 + dx - 9, 74 - tall, 18, tall, '#f7d6b3', 2);
+        poly([[w / 2 + dx - 13, 75 - tall], [w / 2 + dx, 51 - tall], [w / 2 + dx + 13, 75 - tall]], '#8f9fcb');
+        box(w / 2 + dx - 3, 81 - tall, 6, 10, '#9b9fc1', 3);
+      }
+      box(w / 2 - 7, 65, 14, 20, '#8a859c', 7);
+      for (let x = 0; x < w; x += 28) line([[x, 19 + Math.sin(x / 47) * 8], [x, 45]], '#c59aa3', 2);
+      const track = []; for (let x = -4; x <= w + 4; x += 4) track.push([x, 19 + Math.sin(x / 47) * 8]);
+      line(track, '#c77788', 5); line(track, '#f7e8c5', 1);
+      [25, w - 25].forEach((x, i) => { tent(x, 75, 28, i ? '#87bbc0' : '#dc9da9', '#fff0d0'); flowerbed(x - 16, 103, 32, rnd, '#e8a4be'); });
+      sign(w / 2, 97, 'WONDER PARK', '#a47899');
+    } },
+    { name: 'Downtown', icon: '🏙️', garden: '#a7c3ad', asphalt: '#a5afb9', curb: '#d9ded5', plaza(w, h, rnd) {
+      tiles(w, h, '#c9d6ce', '#8da59a30', 18);
+      for (let i = 0; i < 6; i++) {
+        const bw = w / 6, x = i * bw + 3, y = 8 + (i % 2) * 9;
+        roof(x, y, bw - 6, 32 + (i % 3) * 4, ['#7e9ba5', '#b58c83', '#769c91'][i % 3], '#e3d6ba');
+        windows(x + 6, y + 23, Math.floor((bw - 14) / 9), '#f3da9d');
+        box(x + 7, y + 5, 14, 10, '#bcd2ca', 2); line([[x + 9, y + 8], [x + 18, y + 8]], '#809d9d');
+      }
+      box(0, 99, w, 28, '#77939a', 0);
+      ctx.setLineDash([10, 12]); line([[0, 113], [w, 113]], '#e5ddab', 1.5); ctx.setLineDash([]);
+      for (const x of [15, w - 32]) for (let i = 0; i < 5; i++) box(x, 101 + i * 5, 17, 3, '#e6e9d9', 0);
+      circle(w / 2 + 3, 75, 25, '#3a625a20'); circle(w / 2, 72, 25, '#e8dfbd'); circle(w / 2, 72, 21, '#7bafb3'); circle(w / 2, 72, 16, '#94c9c6'); circle(w / 2, 72, 5, '#e4eed8');
+      [27, w - 27].forEach(x => { tree(x, 75, 1.15); bench(x, 143); });
+      flowerbed(w / 2 - 63, 68, 27, rnd, '#e5b58b'); flowerbed(w / 2 + 36, 68, 27, rnd, '#e5b58b');
     } },
   ];
+
+  function animate(c, g, time) {
+    if (!g) return;
+    ctx = c;
+    const w = g.cw, h = g.crowdH, middle = w / 2;
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
+    switch ((Math.max(1, g.level) - 1) % THEMES.length) {
+      case 0: // Stadium pennants and a ball rolling on the pitch.
+        flag(middle - 85, 18, '#e78676', time); flag(middle + 79, 18, '#7dbbd2', time + 2);
+        circle(middle + Math.sin(time * 0.35) * 28, 77 + Math.cos(time * 0.35) * 9, 3, '#fff8de');
+        circle(middle + Math.sin(time * 0.35) * 28 + 0.8, 77 + Math.cos(time * 0.35) * 9, 1.2, '#596d67');
+        break;
+      case 1: // Ferris wheel: the cabins stay upright as the wheel rotates.
+        ctx.strokeStyle = '#e8f0d3'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(middle, 43, 31, 0, Math.PI * 2); ctx.stroke();
+        for (let i = 0; i < 10; i++) {
+          const a = i * Math.PI / 5 + time * 0.12, x = middle + Math.cos(a) * 31, y = 43 + Math.sin(a) * 31;
+          line([[middle, 43], [x, y]], '#eef3d6', 1.2);
+          box(x - 4, y, 8, 7, ['#ee8b81', '#eac35d', '#78b7cc', '#b498c4'][i % 4], 2);
+          box(x - 3, y + 1, 6, 2, '#fff3cf', 1);
+        }
+        circle(middle, 43, 5, '#e5c176'); circle(middle, 43, 2, '#fff4d4');
+        break;
+      case 2:
+        for (let i = 0; i < 3; i++) {
+          const x = middle - 42 + i * 42, drift = Math.sin(time * 0.45 + i * 2) * 25;
+          poly([[x, 18], [x - 18 + drift, 108], [x + 18 + drift, 108]], ['#ecc7ee20', '#b5e8e620', '#ffdfa920'][i]);
+        }
+        for (let i = 0; i < 12; i++) { const height = 4 + (1 + Math.sin(time * 1.9 + i * 1.7)) * 7; box(middle - 40 + i * 7, 45 - height, 4, height, ['#ecc0d9', '#95d8d8', '#f8d98e'][i % 3], 1); }
+        break;
+      case 3:
+        plane(w + 40 - ((time * 10 + w * 0.4) % (w + 80)), 91, 0.65);
+        circle(16, 34, 2, '#fff0b4'); circle(w - 16, 34, 2, '#fff0b4');
+        break;
+      case 4:
+        for (const x of [middle - 43, middle + 40]) for (let i = 0; i < 4; i++) {
+          const phase = (time * 0.16 + i / 4) % 1;
+          circle(x + phase * 14, 6 - phase * 24, 3 + phase * 7, `rgba(246,242,223,${(1 - phase) * 0.5})`);
+        }
+        break;
+      case 5: {
+        const x = ((time * 15 + w * 0.3) % (w + 180)) - 140;
+        for (let i = 0; i < 3; i++) {
+          box(x + i * 47 + 2, 21, 44, 18, '#304e5025', 5);
+          box(x + i * 47, 18, 44, 18, i === 2 ? '#c67861' : '#5d938c', 5);
+          windows(x + i * 47 + 5, 22, 4, '#e9e2b6', 5); line([[x + i * 47 + 4, 32], [x + i * 47 + 39, 32]], '#f7d68f', 2);
+        }
+        break;
+      }
+      case 6:
+        for (let i = 0; i < 8; i++) { const x = (i * 67 + time * 3) % (w + 20) - 10, y = 14 + (i % 3) * 19; line([[x - 5, y], [x, y + 1.5], [x + 7, y]], '#e6f7df65', 1.2); }
+        ferry(((time * 7 + w * 0.65) % (w + 100)) - 50, 41 + Math.sin(time * 0.8) * 1.5);
+        break;
+      case 7:
+        flag(middle + 76, 26, '#e9aa66', time);
+        circle(middle + 40, 88 - Math.abs(Math.sin(time * 0.9)) * 7, 3.5, '#d17f63');
+        break;
+      case 8:
+        for (let i = 0; i < 3; i++) {
+          const phase = (time * 0.09 + i / 3) % 1;
+          ctx.strokeStyle = `rgba(247,255,235,${Math.sin(phase * Math.PI) * 0.65})`; ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.moveTo(0, 54 + phase * 27); ctx.bezierCurveTo(w * 0.3, 79 + phase * 27, w * 0.6, 28 + phase * 27, w, 58 + phase * 27); ctx.stroke();
+        }
+        break;
+      case 9:
+        for (let i = 0; i < 4; i++) {
+          const x = ((time * 10 + i * (w + 60) / 4) % (w + 60)) - 30, y = 22 + x / w * 18;
+          line([[x, y], [x, y + 10]], '#5d7e8a');
+          box(x - 7, y + 9, 14, 12, i % 2 ? '#d68e7a' : '#81aebc', 4);
+          box(x - 5, y + 11, 10, 5, '#d6e8df', 2); line([[x - 9, y + 24], [x + 9, y + 24]], '#64828d', 1.5);
+        }
+        break;
+      case 10:
+        for (let i = 0; i < 3; i++) {
+          const x = ((time * 17 + i * 13) % (w + 50)) - 25, y = 19 + Math.sin(x / 47) * 8;
+          box(x - 5, y - 5, 10, 7, ['#a484b5', '#eaa267', '#79b9bd'][i], 2); circle(x - 2, y - 5, 1.8, '#f9e2bb');
+        }
+        break;
+      case 11:
+        for (let i = 0; i < 3; i++) { const radius = 5 + ((time * 3 + i * 5) % 14); ctx.strokeStyle = '#edf9e285'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(middle, 72, radius, 0, Math.PI * 2); ctx.stroke(); }
+        taxi(w - ((time * 14 + w * 0.3) % (w + 32)), 102);
+        break;
+    }
+    ctx.restore();
+  }
 
   function mulberry32(a) {
     return function () {
@@ -241,27 +448,25 @@
     const theme = themeFor(g.level), rnd = mulberry32(g.level * 2654435761);
     const { cw, ch, crowdH } = g;
 
-    // Plaza. Props go in the spots beside the carousel, if there's room.
+    // The miniature setting stays behind the passenger area. Moving props
+    // use the same clip in animate(), so the puzzle always stays clear.
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, cw, crowdH); ctx.clip();
-    const side = [];
-    const left = g.ring.xl - g.ring.r - g.ring.belt / 2 - 6, right = g.ring.xr + g.ring.r + g.ring.belt / 2 + 6;
-    const ys = [crowdH * 0.55, crowdH * 0.82];
-    if (left > 30) ys.forEach((y) => side.push({ x: left / 2, y }));
-    if (cw - right > 30) ys.forEach((y) => side.push({ x: (right + cw) / 2, y }));
-    theme.plaza(cw, crowdH, rnd, side);
+    theme.plaza(cw, crowdH, rnd);
     ctx.restore();
 
     // Parking lot: the road round the screen's edges, the curb, asphalt
     // filling everything inside, painted stalls and street lights
     const top = g.slotTop + g.slotH, R = g.road, rw = g.roadW, A = g.asphalt;
-    ctx.fillStyle = '#e5e7eb'; ctx.fillRect(0, top, cw, ch - top);                       // curb
+    ctx.fillStyle = theme.curb; ctx.fillRect(0, top, cw, ch - top);                       // curb
     ctx.fillStyle = '#4b5563';
     ctx.fillRect(0, top, cw, rw); ctx.fillRect(0, top, rw, ch - top);
     ctx.fillRect(cw - rw, top, rw, ch - top); ctx.fillRect(0, ch - rw, cw, rw);          // road
     ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 7]);
     ctx.beginPath(); ctx.rect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); ctx.stroke(); ctx.setLineDash([]);
     const L = A;
-    ctx.fillStyle = '#a3abb8'; rr(L.x, L.y, L.w, L.h, 6); ctx.fill();                   // asphalt
+    const paving = ctx.createLinearGradient(0, L.y, cw, L.y + L.h);
+    paving.addColorStop(0, theme.asphalt); paving.addColorStop(1, '#bfc7c7');
+    ctx.fillStyle = paving; rr(L.x, L.y, L.w, L.h, 6); ctx.fill();                   // asphalt
     ctx.save(); rr(L.x, L.y, L.w, L.h, 6); ctx.clip();
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
     for (let i = 0; i < (L.w * L.h) / 60; i++) ctx.fillRect(L.x + rnd() * L.w, L.y + rnd() * L.h, 1.5, 1.5);
@@ -280,5 +485,5 @@
   }
 
   const themeFor = (level) => THEMES[(Math.max(1, level) - 1) % THEMES.length];
-  window.Scenery = { paint, themeFor, count: THEMES.length };
+  window.Scenery = { paint, animate, themeFor, count: THEMES.length };
 })();
