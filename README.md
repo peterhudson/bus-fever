@@ -16,7 +16,7 @@ Tap the crowd to make the carousel turn faster for a moment.
 
 Special pieces show up as you go:
 
-- **Mystery buses (level 8+)** are grey with a "?" until nothing blocks their way out (or you tap them).
+- **Mystery buses (level 8+)** are grey with a "?" until nothing blocks their way out. Tapping or holding a blocked bus won't reveal its color.
 - **Flip buses (every third level from 12)** carry a turn-around sign and turn around each time any bus leaves the lot.
 - **Tunnels (level 15+)** release a new bus whenever the spot in front of them is clear. The badge shows how many are left inside.
 
