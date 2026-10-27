@@ -349,12 +349,65 @@
     } },
   ];
 
+
+  const paradeKinds = ['lion','horse','flamingo','luggage','robot','train','seagull','duck','penguin','skier','dinosaur','dog'];
+  THEMES.forEach((theme,index) => { theme.index=index; theme.parade=paradeKinds[index]; });
+  // Wildlife scenes join the parade rotation; ordinary levels retain their
+  // original twelve-theme cycle. Dirt lots keep the grey elephants legible.
+  const WILDLIFE = [
+    { name:'African savanna', icon:'🌍', garden:'#b8bc77', asphalt:'#d5b176', curb:'#c6a36f', earth:'#e3c691', parade:'elephant', wildlife:'savanna', plaza(w,h,rnd) {
+      wash(w,h,'#e8ce91','#b7bc79');
+      poly([[0,29],[w*.22,8],[w*.43,35],[w*.72,12],[w,28],[w,77],[0,77]],'#d8bb7f');
+      poly([[0,54],[w*.3,26],[w*.59,51],[w*.84,31],[w,52],[w,101],[0,101]],'#c3ad72');
+      line([[w*.59,78],[w*.73,108],[w,h]],'#ead09a',19);
+      const acacia=(x,y,scale)=>{ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);shadow(2,8,21);line([[0,19],[-1,-4],[-13,-13]],'#85704b',4);line([[-1,2],[13,-10]],'#85704b',3);for(const [a,b,r]of[[-17,-13,12],[-3,-17,16],[15,-12,12]]){circle(a,b,r,'#6e8a57');circle(a-3,b-4,r*.65,'#8ca264');}ctx.restore();};
+      acacia(w/2-66,45,.85);acacia(19,97,.6);acacia(w-17,108,.7);
+      ctx.fillStyle='#6a9f95';ctx.beginPath();ctx.ellipse(w/2-8,79,34,17,-.1,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#91b4a0';ctx.beginPath();ctx.ellipse(w/2-11,76,27,11,-.1,0,Math.PI*2);ctx.fill();
+      tent(w/2+57,44,41,'#c38f59','#efd5a0');box(w/2+39,63,36,10,'#a8794d');box(w/2+51,52,12,18,'#695b43',1);
+      sign(w/2,18,'SAVANNA RESERVE','#7f7952');
+      for(let i=0;i<28;i++){const x=rnd()*w,y=95+rnd()*(h-95);line([[x-2,y-3],[x,y],[x+2,y-4]],'#9b9e63',1);}
+    } },
+    { name:'Indian sanctuary', icon:'🌿', garden:'#91b990', asphalt:'#d2ad83', curb:'#c19771', earth:'#e6c7a0', parade:'elephant', wildlife:'india', plaza(w,h,rnd) {
+      wash(w,h,'#a9c8a0','#c1d2a2');
+      for(const [x,y,r]of[[21,24,26],[w-19,27,29],[w*.28,17,19],[w*.76,15,22]]){circle(x+3,y+4,r,'#648d70');circle(x,y,r,'#79a17c');}
+      line([[w/2,58],[w/2-35,78],[w/2-35,100],[w/2,h]],'#e7c396',25);
+      box(w/2-55,25,110,40,'#be8468',4);box(w/2-61,19,122,12,'#d8a07b',3);box(w/2-55,30,110,5,'#e5b88c',1);
+      box(w/2-16,36,32,29,'#596f5a',15);box(w/2-12,42,24,23,'#71866a',12);
+      for(const x of [w/2-49,w/2+35]){box(x,32,14,33,'#d49d77',1);box(x-3,60,20,5,'#e4b68b',1);box(x+4,39,6,9,'#8a705c',3);}
+      sign(w/2,25,'INDIAN SANCTUARY','#9a715e');
+      ctx.fillStyle='#70a5a1';ctx.beginPath();ctx.ellipse(w/2+13,79,28,14,.1,0,Math.PI*2);ctx.fill();
+      for(const [x,y]of[[w/2+4,74],[w/2+21,83]]){circle(x,y,4,'#9ac18a');circle(x-1,y-1,2.4,'#e8acc1');circle(x-1,y-2,1,'#ffe6ad');}
+      palm(w/2-73,77,.8);palm(w/2+83,65,.7);palm(17,112,.7);palm(w-19,120,.75);
+      flowerbed(w/2-55,89,25,rnd,'#e8bb79');fence(4,h-13,40);fence(w-44,h-13,40);
+    } },
+  ];
+  const PARADE_THEMES = [...WILDLIFE,...THEMES];
+  function themeFor(level) {
+    level=Math.max(1,level);
+    if(window.Advanced?.profile(level)?.caravan) {
+      // Mix both the level and chapter so later even-numbered parade levels
+      // can visit every scene, instead of only half the original themes.
+      const index=level<=130 ? level-121 : (level+Math.floor(level/10))%PARADE_THEMES.length;
+      return PARADE_THEMES[index];
+    }
+    return THEMES[(level-1)%THEMES.length];
+  }
+
   function animate(c, g, time) {
     if (!g) return;
     ctx = c;
     const w = g.cw, h = g.crowdH, middle = w / 2;
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
-    switch ((Math.max(1, g.level) - 1) % THEMES.length) {
+    const theme=themeFor(g.level);
+    if(theme.wildlife) {
+      const x=middle+(theme.wildlife==='india'?13:-8),y=79;
+      for(let i=0;i<3;i++){const pulse=(time*.24+i/3)%1;ctx.globalAlpha=(1-pulse)*.4;ctx.strokeStyle='#eef0d0';ctx.lineWidth=.8;ctx.beginPath();ctx.ellipse(x,y,5+pulse*15,2+pulse*5,0,0,Math.PI*2);ctx.stroke();}
+      ctx.globalAlpha=.6;
+      for(let i=0;i<3;i++){const bird=middle-47+((time*7+i*25)%94),yy=9+i*4,flap=Math.sin(time*3+i)*1.5;line([[bird-3,yy+flap],[bird,yy+2],[bird+3,yy+flap]],'#566d5b',1);}
+      ctx.restore();return;
+    }
+    switch (theme.index) {
       case 0: // Stadium pennants and a ball rolling on the pitch.
         flag(middle - 85, 18, '#e78676', time); flag(middle + 79, 18, '#7dbbd2', time + 2);
         circle(middle + Math.sin(time * 0.35) * 28, 77 + Math.cos(time * 0.35) * 9, 3, '#fff8de');
@@ -465,11 +518,18 @@
     ctx.beginPath(); ctx.rect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); ctx.stroke(); ctx.setLineDash([]);
     const L = A;
     const paving = ctx.createLinearGradient(0, L.y, cw, L.y + L.h);
-    paving.addColorStop(0, theme.asphalt); paving.addColorStop(1, '#bfc7c7');
+    const parade=window.Advanced?.profile(g.level)?.caravan;
+    const sand=parade&&theme.parade==='penguin', fair=parade&&theme.parade==='horse';
+    const earth=theme.earth||(sand?'#edcf98':fair?'#dfc69c':null);
+    paving.addColorStop(0,sand?'#e3be83':fair?'#c8ad82':theme.asphalt);paving.addColorStop(1,earth||'#bfc7c7');
     ctx.fillStyle = paving; rr(L.x, L.y, L.w, L.h, 6); ctx.fill();                   // asphalt
     ctx.save(); rr(L.x, L.y, L.w, L.h, 6); ctx.clip();
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
     for (let i = 0; i < (L.w * L.h) / 60; i++) ctx.fillRect(L.x + rnd() * L.w, L.y + rnd() * L.h, 1.5, 1.5);
+    if(earth) {
+      // Quiet dirt texture stays beneath the puzzle, with no painted stalls.
+      for(let i=0;i<48;i++){const x=L.x+rnd()*L.w,y=L.y+rnd()*L.h;ctx.fillStyle='#866d4b12';ctx.beginPath();ctx.ellipse(x,y,2+rnd()*5,1+rnd()*2,rnd()*3,0,Math.PI*2);ctx.fill();}
+    } else {
     // stall lines along the top and bottom edges, a dashed lane down the middle
     ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
     const step = Math.max(18, (g.lot.w / 330) * 26);
@@ -479,11 +539,11 @@
     }
     ctx.strokeStyle = 'rgba(250,204,21,0.55)'; ctx.setLineDash([12, 10]);
     ctx.beginPath(); ctx.moveTo(L.x + 8, L.y + L.h / 2); ctx.lineTo(L.x + L.w - 8, L.y + L.h / 2); ctx.stroke(); ctx.setLineDash([]);
+    }
     ctx.restore();
     // street lights on the lot's corners
-    [[L.x, L.y], [L.x + L.w, L.y], [L.x, L.y + L.h], [L.x + L.w, L.y + L.h]].forEach(([x, y], i) => lamp(x + (i % 2 ? -4 : 4), y + (i < 2 ? 4 : -4), i % 2 ? -1 : 1, 0.8));
+    if(!earth) [[L.x, L.y], [L.x + L.w, L.y], [L.x, L.y + L.h], [L.x + L.w, L.y + L.h]].forEach(([x, y], i) => lamp(x + (i % 2 ? -4 : 4), y + (i < 2 ? 4 : -4), i % 2 ? -1 : 1, 0.8));
   }
 
-  const themeFor = (level) => THEMES[(Math.max(1, level) - 1) % THEMES.length];
-  window.Scenery = { paint, animate, themeFor, count: THEMES.length };
+  window.Scenery = { paint, animate, themeFor, count: THEMES.length + WILDLIFE.length, baseCount: THEMES.length };
 })();

@@ -93,7 +93,7 @@ async function checkUI() {
   const geometry = { cw: 390, ch: 720, crowdH: 214, slotTop: 214, slotH: 60, roadW: 16,
     asphalt: { x: 18, y: 292, w: 354, h: 410 }, road: { x0: 8, x1: 382, y0: 282, y1: 712 },
     lot: { x: 20, y: 310, w: 350, h: 370 }, ring: { xl: 157, xr: 233, yt: 110, yb: 186, r: 38, belt: 44 } };
-  for (let level = 1; level <= 12; level++) {
+  for (const level of [...Array.from({length:12},(_,i)=>i+1),121,122]) {
     const g = { ...geometry, level };
     window.Scenery.paint(context, g);
     const lotBefore = context.getImageData(0, 214, 390, 506).data.slice();
