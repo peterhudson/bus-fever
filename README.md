@@ -27,7 +27,24 @@ Special pieces show up as you go:
 - **Locked buses (from level 60)** open when a bus the color of the padlock leaves the lot.
 - **Traffic cones (from level 64)** never move.
 - **Gates (from level 70)** sit in the lot like cones but open and close as buses leave. An N-gate is shut for N moves, then open for N moves. The badge counts the moves until it changes. Gates only go where the winning order finds them open.
-- **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
+- **HARD levels (every 10th level)** have a smaller carousel and pay double coins. Through level 100, they also pack buses into shapes such as a ring, plus, diamond or L.
+
+After level 100, new chapters focus on the new rules, with mystery buses returning after each introduction. The first three levels of each chapter use fewer buses and colours; later lessons combine it with the previous chapter. From level 201, the rules appear in increasingly crowded combinations.
+
+| Starts at | New challenge |
+| --- | --- |
+| 101 | **Road crews:** an entire left, right or bottom exit closes for a visible number of departures. Waiting and blocked taps do not advance the countdown. |
+| 111 | **Mixed pairs:** rows contain pairs of colours. Passengers board individually, and empty places refill without replacing their neighbours. |
+| 121 | **Elephant parade:** a partial roadblock travels down the right road, across the bottom and up the left, then back. The dotted marker previews its next position. |
+| 131 | **Linked buses:** buses with the same chain number depart together, requiring two clear exit paths and two free bays. They count as two departures. |
+| 141 | **Switch pads:** dispatching the bus on the striped pad opens barrier A and closes barrier B. |
+| 151 | **Pairs and singles:** passenger rows can contain a pair and two singles. |
+| 161 | **Two-stage routes:** fill the first roof colour, then the second. The bay counter shows the active stage and its remaining passengers. |
+| 171 | **Alternating chutes:** the active feed changes every two departures; an empty chute yields to the other one. |
+| 181 | **Transfer tunnels:** a T-marked bus uses its first departure to move to the outlined destination and turn. It takes no bay until dispatched again. |
+| 191 | **Four-colour rows:** each person in a row can have a different colour. |
+
+The carousel has a taller inner island, and the chutes join its upper curved corners, leaving more room for the miniature scenery. The island shows departure counts and chute changes. **Menu → This level’s rules** explains the current combination. Roadblocks restrict the exit from the lot; buses already on the perimeter road can continue to the bays.
 
 Each level is set somewhere people line up for buses, from 12 miniature scenes that repeat: stadium, county fair, music festival, airport, factory, train station, ferry port, school, beach, ski resort, theme park and downtown. Each has its own scenery and gentle animation, including a turning Ferris wheel, stage lights, a passing train, surf and ski lifts. Scenery motion pauses with the game and respects your device's Reduce Motion setting.
 
@@ -46,9 +63,9 @@ Everything the original style of game sells is earned by playing instead:
 
 Boosters:
 
-- **Shuffle** mixes up the colors of the buses still in the lot.
+- **Shuffle** mixes up the colors of the buses still in the lot, keeping complete two-stage routes together and preserving passenger totals.
 - **Sort** moves passengers who fit your parked buses to the front of the line.
-- **VIP** flies any bus, even a blocked one, straight to the VIP bay.
+- **VIP** flies any bus, even a blocked one, straight to the VIP bay. Rescuing a linked bus separates it from its partner; a transfer bus skips its tunnel.
 
 ## Install on an iPhone
 
@@ -69,12 +86,16 @@ python3 -m http.server 8123
 
 - `index.html`: page, HUD and styles
 - `game.js`: level generator, game logic and canvas rendering
+- `advanced.js`: chapter progression, road rules, bus routes and passenger planning after level 100
 - `scenery.js`: the level themes and the parking lot background
 - `sw.js`: offline cache. Bump `VERSION` when shipping changes so installed copies update
 - `tools/autoplay.js`: Playwright bot that plays levels 1-50 to check difficulty
 - `tools/ui-checks.js`: Playwright checks for the power-up tray, Shop, touch targets and all 12 animated scenes at three phone sizes (`node tools/ui-checks.js`, with the local server running and Playwright installed)
+- `tools/mechanics-checks.js`: dependency-free rule checks and complete game simulations, including legacy levels, phone sizes and frame rates (`node tools/mechanics-checks.js`; defaults to levels 1–210 plus samples through 1000)
+- `tools/headless.js`: minimal DOM adapter used by those simulations; executes the real `game.js` rules
+- `tools/advanced-ui-checks.js`: browser checks for boosters with linked, staged and transfer buses, current-rule help and carousel geometry
 
-Levels are generated from the level number, so the same level is always the same layout. The generator only keeps a layout once it has found an order that clears the lot (following flip buses and tunnels), then builds the passenger line from that order, so every level is solvable with 4 bays and no boosters. Buses of the same color fill in the order they arrived, which is what keeps that true.
+Levels are seeded by their number. Through level 100, the generator finds a clearing order (following flip buses and tunnels) and builds the passenger line from it. Later chapters also simulate the complete solution through the real boarding and departure rules with four bays and no boosters before showing the level. Alternating feeds are planned by recording which chute supplies each passenger, then replaying both real queues. A candidate that fails this check is discarded. Verified advanced candidates are cached by level and screen size; different screen sizes may select a different candidate. Existing save data is retained.
 
 Deployed with GitHub Pages from the `main` branch.
 
