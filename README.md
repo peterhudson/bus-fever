@@ -14,6 +14,8 @@ A no-ads, no-purchases bus parking puzzle for the phone, inspired by the "bus ja
 
 Tap the crowd to make the carousel turn faster for a moment.
 
+The **Power-ups** button below the left chute opens a tray showing your VIP, Shuffle and Sort inventories. Tap a power-up to use it, or tap outside the tray to close it. **Shop** is below the right chute. Keeping these controls beside the carousel leaves more room for the parking lot.
+
 Special pieces show up as you go:
 
 - **Mystery buses (level 8+)** are grey with a "?" until nothing blocks their way out. Tapping or holding a blocked bus won't reveal its color.
@@ -27,7 +29,7 @@ Special pieces show up as you go:
 - **Gates (from level 70)** sit in the lot like cones but open and close as buses leave. An N-gate is shut for N moves, then open for N moves. The badge counts the moves until it changes. Gates only go where the winning order finds them open.
 - **HARD levels (every 10th level)** pack the buses into a shape (ring, plus, diamond or L), have a smaller carousel, and pay double coins.
 
-Each level is set somewhere people line up for buses, from 12 themes that repeat: stadium, county fair, music festival, airport, factory, train station, ferry port, school, beach, ski resort, theme park and downtown.
+Each level is set somewhere people line up for buses, from 12 miniature scenes that repeat: stadium, county fair, music festival, airport, factory, train station, ferry port, school, beach, ski resort, theme park and downtown. Each has its own scenery and gentle animation, including a turning Ferris wheel, stage lights, a passing train, surf and ski lifts. Scenery motion pauses with the game and respects your device's Reduce Motion setting.
 
 Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up. Its shape changes from level to level, from round to long and flat. Past level 45 levels keep getting harder up to level 100: more buses, a smaller carousel, more special buses and a more mixed-up line. By level 100 one wrong move almost always loses.
 
@@ -70,6 +72,7 @@ python3 -m http.server 8123
 - `scenery.js`: the level themes and the parking lot background
 - `sw.js`: offline cache. Bump `VERSION` when shipping changes so installed copies update
 - `tools/autoplay.js`: Playwright bot that plays levels 1-50 to check difficulty
+- `tools/ui-checks.js`: Playwright checks for the power-up tray, Shop, touch targets and all 12 animated scenes at three phone sizes (`node tools/ui-checks.js`, with the local server running and Playwright installed)
 
 Levels are generated from the level number, so the same level is always the same layout. The generator only keeps a layout once it has found an order that clears the lot (following flip buses and tunnels), then builds the passenger line from that order, so every level is solvable with 4 bays and no boosters. Buses of the same color fill in the order they arrived, which is what keeps that true.
 

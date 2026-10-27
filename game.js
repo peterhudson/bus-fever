@@ -444,7 +444,7 @@
     dpr = Math.min(window.devicePixelRatio || 1, 3);
     cw = canvas.clientWidth; ch = canvas.clientHeight;
     canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
-    crowdH = Math.round(Math.max(170, Math.min(ch * 0.32, 260)));
+    crowdH = Math.round(Math.max(190, Math.min(ch * 0.28, 224)));
     slotTop = crowdH; slotH = 60;
     // The road runs round the screen's edges below the bays and the asphalt
     // fills everything inside it. The lot's play area is centred on it.
@@ -485,11 +485,13 @@
     const minR = BELT_W / 2 + 6;
     const rows = G.ring.length / LANES, maxR = Math.max(minR, (ringYB - feedTop - BELT_W / 2) / 2);
     ringR = Math.max(minR, Math.min(maxR * [1, 0.72, 0.5][save.level % 3], (rows * ROW_SP * 0.6) / (2 * Math.PI)));
-    const maxL1 = cw - 2 * (8 + ringR + BELT_W / 2);
+    // Leave a thumb-sized pocket on either side for the compact controls.
+    const maxL1 = cw - 2 * (60 + ringR + BELT_W / 2);
     const L1 = Math.max(BELT_W + 22, Math.min(maxL1, (rows * ROW_SP - 2 * Math.PI * ringR) / 2));
     ringYT = ringYB - 2 * ringR;
     ringXL = (cw - L1) / 2; ringXR = ringXL + L1;
     ringLen = 2 * L1 + 2 * Math.PI * ringR;
+    $('#playfield').style.setProperty('--control-top', `${Math.round(ringYT + ringR - 26)}px`);
     // The chutes: each comes down from off the top of the screen in a sweeping
     // curve and drops straight onto the belt at one of its top corners.
     // Stored as points from the belt end outwards, with distance along the way.
@@ -516,15 +518,17 @@
 
   // The scenery behind everything is painted once per level and screen size
   const bg = document.createElement('canvas');
+  let sceneryGeometry = null;
   function paintScenery() {
     bg.width = canvas.width; bg.height = canvas.height;
     const c = bg.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    window.Scenery.paint(c, {
+    sceneryGeometry = {
       cw, ch, crowdH, slotTop, slotH, level: save.level, road, roadW: ROAD, curb: CURB, asphalt,
       lot: { x: lotX, y: lotY, w: LW * ls, h: LH * ls },
       ring: { xl: ringXL, xr: ringXR, yt: ringYT, yb: ringYB, r: ringR, belt: BELT_W },
-    });
+    };
+    window.Scenery.paint(c, sceneryGeometry);
   }
   // Point on a chute, d measured from where it meets the belt, with the
   // direction people walk there (towards the belt)
@@ -590,6 +594,7 @@
   const ringSeats = (n) => LANES * Math.round((n < 5 ? 36 : Math.max(16 - Math.round(8 * late(n)), 32 - Math.floor(n / 2))) * (isHard(n) ? 0.8 : 1));
 
   function startLevel() {
+    setPowerPanel(false);
     const L = genLevel(save.level);
     G = {
       buses: L.buses.map((b, i) => makeBus(b, i)),
@@ -805,6 +810,8 @@
 
   canvas.addEventListener('pointerdown', (e) => {
     unlockAudio();
+    // Dismiss the tray without also making a move underneath it.
+    if (!$('#powerPanel').hidden) { setPowerPanel(false); return; }
     if (G.modal || G.won) return;
     const r = canvas.getBoundingClientRect();
     const px = e.clientX - r.left, py = e.clientY - r.top;
@@ -1202,11 +1209,13 @@
     ctx.restore();
   }
 
-  let clock = 0;
+  let clock = 0, sceneryClock = 0;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // Scenery: the themed plaza where the crowd waits, and the parking lot
     ctx.drawImage(bg, 0, 0, cw, ch);
+    window.Scenery.animate(ctx, sceneryGeometry, sceneryClock);
     // The two chutes, curving in from off the top of the screen
     ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
     for (const side of [0, 1]) {
@@ -1226,7 +1235,7 @@
       ctx.arc(ringXL, ringYT + ringR, ringR, Math.PI / 2, Math.PI * 1.5);
       ctx.closePath();
     };
-    ctx.fillStyle = '#c7d7c0'; belt(); ctx.fill();
+    ctx.fillStyle = window.Scenery.themeFor(save.level).garden; belt(); ctx.fill();
     ctx.strokeStyle = 'rgba(15,23,42,0.12)'; ctx.lineWidth = BELT_W + 12; belt(); ctx.stroke();
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = BELT_W + 8; ctx.stroke();
     ctx.strokeStyle = '#8f9ab0'; ctx.lineWidth = BELT_W; ctx.stroke();
@@ -1331,6 +1340,7 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now; clock += dt;
+    if (!reducedMotion.matches && !G.modal && !G.won && !document.hidden) sceneryClock += dt;
     update(dt);
     draw();
     requestAnimationFrame(frame);
@@ -1343,15 +1353,20 @@
     $('#progFill').style.width = pct + '%';
   }
   function updateHUD() {
+    const theme = window.Scenery.themeFor(save.level);
+    $('#themeName').textContent = theme.icon + ' ' + theme.name;
     $('#lvl').innerHTML = 'LEVEL ' + save.level + (isHard(save.level) ? ' <span class="hard">HARD</span>' : '');
     $('#coins').textContent = '🪙 ' + save.coins;
     document.querySelectorAll('.boost[data-k]').forEach((el) => {
       const k = el.dataset.k, n = save.boosters[k];
       const cnt = el.querySelector('.cnt');
-      cnt.textContent = n > 0 ? n : '+';
+      cnt.textContent = n;
+      el.setAttribute('aria-label', `${k === 'vip' ? 'VIP' : k === 'sort' ? 'Sort' : 'Shuffle'}, ${n} available${k === 'vip' && G.vipMode ? ', selected' : ''}`);
       cnt.classList.toggle('zero', n <= 0);
       el.classList.toggle('active', k === 'vip' && G && G.vipMode);
     });
+    $('#btnBoosters').classList.toggle('active', !!(G && G.vipMode));
+    $('#btnBoosters').setAttribute('aria-label', G && G.vipMode ? 'Power-ups, VIP selected' : 'Power-ups');
     if (G) updateProgress();
   }
 
@@ -1417,8 +1432,29 @@
       spendBooster('sort'); sound('magic');
     }
   }
-  document.querySelectorAll('.boost[data-k]').forEach((el) => el.addEventListener('click', () => onBooster(el.dataset.k)));
-  $('#btnShop').addEventListener('click', () => { unlockAudio(); openShop(); });
+  function setPowerPanel(open, restoreFocus = false) {
+    $('#powerPanel').hidden = !open;
+    $('#btnBoosters').setAttribute('aria-expanded', String(open));
+    if (restoreFocus) $('#btnBoosters').focus();
+  }
+  $('#btnBoosters').addEventListener('click', () => {
+    unlockAudio();
+    if (!G.modal && !G.won) setPowerPanel($('#powerPanel').hidden);
+  });
+  document.querySelectorAll('.boost[data-k]').forEach((el) => el.addEventListener('click', () => {
+    setPowerPanel(false, true);
+    onBooster(el.dataset.k);
+  }));
+  document.addEventListener('pointerdown', (e) => {
+    if (!$('#powerDock').contains(e.target)) setPowerPanel(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#powerPanel').hidden) { setPowerPanel(false, true); e.preventDefault(); }
+  });
+  $('#powerDock').addEventListener('focusout', (e) => {
+    if (e.relatedTarget && !$('#powerDock').contains(e.relatedTarget)) setPowerPanel(false);
+  });
+  $('#btnShop').addEventListener('click', () => { unlockAudio(); setPowerPanel(false); openShop(); });
   $('#btnRestart').addEventListener('click', () => {
     unlockAudio();
     if (G.modal) return;
@@ -1431,6 +1467,7 @@
   let modalActions = {};
   let modalOnClose = null;
   function showModal(html, actions, onClose) {
+    setPowerPanel(false);
     G.modal = true;
     G.vipMode = false;
     $('#card').innerHTML = html;
@@ -1602,5 +1639,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for testing
-  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, get G() { return G; }, get save() { return save; } };
+  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; } };
 })();
