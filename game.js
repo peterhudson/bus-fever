@@ -520,7 +520,7 @@
     ringYT = ringYB - 2 * ringR;
     ringXL = (cw - L1) / 2; ringXR = ringXL + L1;
     ringLen = 2 * L1 + 2 * Math.PI * ringR;
-    $('#playfield').style.setProperty('--control-top', `${Math.round(ringYT + ringR - 26)}px`);
+    $('#playfield').style.setProperty('--control-top', `${Math.round(ringYT + ringR - 26 + (G.rules?.switchEvery ? 20 : 0))}px`);
     // The chutes: each comes down from off the top of the screen in a sweeping
     // curve and drops straight onto the belt at one of its top corners.
     // Stored as points from the belt end outwards, with distance along the way.
@@ -641,7 +641,7 @@
       ring: new Array(ringSeats(save.level)).fill(null), ringOff: 0, enter: {},
       modal: false, won: false, stuckT: 0, checkT: 0, failDismissed: false,
       rules: L.rules ? { ...L.rules, caravan: L.rules.caravan ? { ...L.rules.caravan, bounds:{...L.rules.caravan.bounds} } : undefined } : undefined, solution: L.solution, switched: false,
-      paradeMoves:0, paradeFrom:0, paradeT:0, linkFocus:null, linkFocusT:0, chuteLift:[0,0],
+      paradeMoves:0, paradeFrom:0, paradeT:0, linkFocus:null, linkFocusT:0, chuteSlide:[0,0],
       validating, planning, recordedFeeds: [[], []], validationFailed: false,
     };
     for (let k = 0; k < G.ring.length && G.queue.length; k++) G.ring[k] = G.queue.shift();
@@ -649,7 +649,7 @@
     if (L.feeds) { G.queue = L.feeds[0].concat(L.feeds[1]); G.leftN = L.feeds[0].length; }
     for (const t of G.tunnels) if (t.gate) t.lift = gateOpen(t, 0) ? 1 : 0;
     G.box = levelBox(); fitLot(); ringLayout(); revealFree();
-    G.chuteLift = [0,1].map(side => chuteGateState(side).open ? 1 : 0);
+    G.chuteSlide = [0,1].map(side => chuteGateState(side).open ? 1 : 0);
   }
   function runSolution(dt = 0.04, maxSteps = 120000) {
     let step = 0, index = 0;
@@ -1012,7 +1012,7 @@
       G.paradeT = reducedMotion.matches ? 0 : Math.max(0, G.paradeT - dt);
       G.paradeMoves = lerp(G.paradeFrom, G.arrivals, easeInOut(1 - G.paradeT / 0.42));
     }
-    if (G.rules?.switchEvery) G.chuteLift = G.chuteLift.map((lift, side) => {
+    if (G.rules?.switchEvery) G.chuteSlide = G.chuteSlide.map((lift, side) => {
       const target = chuteGateState(side).open ? 1 : 0;
       return reducedMotion.matches ? target : lerp(lift, target, Math.min(1, dt * 12));
     });
@@ -1422,60 +1422,69 @@
       }
     }
   }
+  function paradeIndicator() {
+    const c=G.rules.caravan, travel=A.caravanTravel(c,G.paradeMoves);
+    const p=A.caravanPoint(c,travel.center);
+    return { x:lotX+p.x*ls-p.ty*13, y:lotY+p.y*ls+p.tx*13,
+      angle:Math.atan2(p.ty,p.tx)+(travel.direction>0?0:Math.PI), positions:travel.positions };
+  }
   function drawParade() {
-    const c = G.rules?.caravan;
-    if (!c) return;
-    // Complete ghost herds, slightly inset so overlapping future positions
-    // remain visible. They use exactly the same route as the blocking rules.
-    for (const ahead of [2,1,0]) {
-      const moves = ahead ? G.arrivals + ahead : G.paradeMoves;
-      const scale = c.spacing * ls / 22, points = A.caravanMembers(c, moves), inset = ahead * 3 * scale;
-      const tint = ahead === 1 ? '#279f9d' : ahead === 2 ? '#8279c6' : null;
-      const alpha = ahead === 1 ? 0.4 : ahead === 2 ? 0.23 : 1;
-      points.forEach((p,i) => {
-        const x = lotX + p.x * ls - p.ty * inset, y = lotY + p.y * ls + p.tx * inset;
-        const stride = !ahead && G.paradeT > 0 && !reducedMotion.matches ? Math.sin(sceneryClock * 20 + i) : 0;
-        window.ParadeArt.draw(ctx, { x, y, angle:p.facing, kind:window.Scenery.themeFor(save.level).parade || 'elephant', tint, alpha, stride, scale });
-      });
-      if (ahead) {
-        const p = A.caravanPoint(c, A.caravanCenter(c, moves)), offset = inset + 13;
-        const x = lotX + p.x*ls - p.ty*offset, y = lotY + p.y*ls + p.tx*offset;
-        ctx.save(); ctx.globalAlpha = ahead === 1 ? 0.85 : 0.6;
-        ctx.fillStyle = tint; ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.font = '900 8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(ahead),x,y+.5); ctx.restore();
-      }
-    }
+    const c=G.rules?.caravan;
+    if(!c)return;
+    const scale=c.spacing*ls/22, kind=window.Scenery.themeFor(save.level).parade||'elephant';
+    A.caravanMembers(c,G.paradeMoves).forEach((p,i)=>{
+      const stride=G.paradeT>0&&!reducedMotion.matches?Math.sin(sceneryClock*20+i):0;
+      window.ParadeArt.draw(ctx,{x:lotX+p.x*ls,y:lotY+p.y*ls,angle:p.facing,kind,stride,scale});
+    });
+    // One attached movement badge; the numeral stays upright on every side.
+    const badge=paradeIndicator();
+    ctx.save();ctx.translate(badge.x,badge.y);ctx.rotate(badge.angle);
+    ctx.fillStyle='#183c5540';rr(-17,-7,34,18,8);ctx.fill();
+    ctx.fillStyle='#245d73';rr(-17,-9,34,18,8);ctx.fill();
+    ctx.strokeStyle='#edf8f5';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.lineWidth=2;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();
+    ctx.moveTo(2,0);ctx.lineTo(11,0);ctx.moveTo(7,-4);ctx.lineTo(11,0);ctx.lineTo(7,4);ctx.stroke();
+    ctx.translate(-7,0);ctx.rotate(-badge.angle);ctx.fillStyle='#fff';
+    ctx.font='900 12px -apple-system, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(String(badge.positions),0,.5);ctx.restore();
+  }
+  function chuteGateGeometry(side) {
+    const p=chutePoint(side,3), outward=side?-1:1;
+    return { p, outward, angle:Math.atan2(p.ty,p.tx),
+      counter:{x:p.x+(side?37:-37),y:p.y+16,r:11},
+      front:lerp(-BELT_W/2+1,BELT_W/2+5,G.chuteSlide[side]), outer:BELT_W/2+5 };
   }
   function drawChuteGates() {
-    if (!G.rules?.switchEvery) return;
-    for (const side of [0,1]) {
-      const state = chuteGateState(side), p = chutePoint(side, 3), lift = G.chuteLift[side];
-      const color = state.empty ? '#91a3b2' : state.open ? '#26bb72' : '#f45c68';
-      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(Math.atan2(p.ty,p.tx));
-      // Stout gate posts sit on the two white chute edges.
-      for (const edge of [-1,1]) {
-        ctx.fillStyle = '#557386'; rr(-5,edge*(BELT_W/2+1)-5,10,11,3); ctx.fill();
-        ctx.fillStyle = '#dae7ed'; rr(-5,edge*(BELT_W/2+1)-6,10,7,3); ctx.fill();
+    if(!G.rules?.switchEvery)return;
+    for(const side of [0,1]) {
+      const state=chuteGateState(side), gate=chuteGateGeometry(side), {p,counter,front,outer}=gate;
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(gate.angle);ctx.scale(1,gate.outward);
+      // The telescoping steel panel slides across the lane into its outer
+      // housing: down-left for the left chute, down-right for the right.
+      const metal=ctx.createLinearGradient(-5,0,5,0);
+      metal.addColorStop(0,'#657580');metal.addColorStop(.45,'#c0cbd1');metal.addColorStop(1,'#7f909a');
+      if(outer-front>.2) {
+        ctx.fillStyle='#243b4940';rr(-2,front+2,8,outer-front,2);ctx.fill();
+        ctx.fillStyle=metal;rr(-4,front,8,outer-front,2);ctx.fill();
+        ctx.strokeStyle='#415460';ctx.lineWidth=1.2;ctx.stroke();
+        ctx.strokeStyle='#71838e';ctx.lineWidth=1;
+        for(let i=1;i<6;i++){const y=lerp(front,outer,i/6);ctx.beginPath();ctx.moveTo(-3,y);ctx.lineTo(3,y);ctx.stroke();}
+        ctx.fillStyle='#435967';rr(-5,front-1,10,4,1.5);ctx.fill();
       }
-      ctx.save(); ctx.translate(0,-BELT_W/2); ctx.rotate(lift*Math.PI/2);
-      ctx.fillStyle = 'rgba(25,48,65,.2)'; rr(-2,2,7,BELT_W,2); ctx.fill();
-      ctx.fillStyle = '#fff'; rr(-3,0,6,BELT_W,2); ctx.fill();
-      ctx.save(); ctx.clip(); ctx.fillStyle = color;
-      for (let y=-6;y<BELT_W;y+=12) { ctx.beginPath(); ctx.moveTo(-3,y); ctx.lineTo(3,y+4); ctx.lineTo(3,y+10); ctx.lineTo(-3,y+6); ctx.closePath(); ctx.fill(); }
-      ctx.restore(); ctx.restore();
-      if (state.open) {
-        ctx.strokeStyle = '#20b471'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-        for (const x of [0,7]) { ctx.beginPath(); ctx.moveTo(x-2,-4); ctx.lineTo(x+2,0); ctx.lineTo(x-2,4); ctx.stroke(); }
-      }
+      ctx.fillStyle='#718591';rr(-7,outer-2,14,12,3);ctx.fill();
+      ctx.fillStyle=metal;rr(-6,outer-3,12,10,2);ctx.fill();
+      ctx.strokeStyle='#425865';ctx.lineWidth=1.2;ctx.stroke();
+      for(const y of [outer,outer+4]){ctx.fillStyle='#435764';ctx.beginPath();ctx.arc(0,y,1,0,Math.PI*2);ctx.fill();}
       ctx.restore();
-      // Big, upright counter badges make the gates readable at phone size.
-      const x = p.x + (side ? 31 : -31), y = p.y - 5;
-      ctx.save(); ctx.fillStyle = '#426477'; ctx.beginPath(); ctx.arc(x,y+2,12,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x,y,12,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.font = '900 14px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(state.empty ? '✓' : state.remaining === null ? '›' : String(state.remaining),x,y+.5); ctx.restore();
+      // The counter's mounting arm and badge sit outside the passenger lane.
+      const mount={x:p.x-p.ty*gate.outward*(outer+4),y:p.y+p.tx*gate.outward*(outer+4)};
+      ctx.save();ctx.strokeStyle='#667d8b';ctx.lineWidth=3;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(mount.x,mount.y);ctx.lineTo(counter.x,counter.y);ctx.stroke();
+      ctx.fillStyle='#20374435';ctx.beginPath();ctx.arc(counter.x,counter.y+2,counter.r+1,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=state.empty?'#71828c':'#344c5d';ctx.beginPath();ctx.arc(counter.x,counter.y,counter.r,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#dbe6e9';ctx.lineWidth=2;ctx.stroke();
+      ctx.fillStyle='#fff';ctx.font='900 13px -apple-system, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(state.empty?'✓':state.remaining===null?'›':String(state.remaining),counter.x,counter.y+.5);ctx.restore();
     }
   }
 
@@ -1973,5 +1982,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for testing
-  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
+  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
 })();

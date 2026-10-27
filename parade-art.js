@@ -2,19 +2,9 @@
 // Small top-down parade sprites. Every theme uses the same blocking footprint.
 'use strict';
 (() => {
-  const ghostColors=new Map();
-  function ghostColor(base,tint) {
-    if(!tint)return base;
-    const key=base+tint;
-    if(!ghostColors.has(key)) {
-      const a=parseInt(base.slice(1),16),b=parseInt(tint.slice(1),16);
-      ghostColors.set(key,'#'+[16,8,0].map(shift=>Math.round(((a>>shift)&255)*.62+((b>>shift)&255)*.38).toString(16).padStart(2,'0')).join(''));
-    }
-    return ghostColors.get(key);
-  }
-  function draw(ctx, {x, y, angle, kind = 'elephant', tint = null, alpha = 1, stride = 0, scale = 1}) {
-    ctx.save(); ctx.globalAlpha = alpha;
-    if (!tint) {
+  function draw(ctx, {x, y, angle, kind = 'elephant', stride = 0, scale = 1}) {
+    ctx.save();
+    {
       // Screen-space offset keeps the sunlight consistent through every turn.
       ctx.save(); ctx.translate(x + 1.4, y + 2.6); ctx.rotate(angle);ctx.scale(scale,scale);
       for (const [rx, ry, opacity] of [[11, 8, .07], [9, 6, .15]]) {
@@ -23,12 +13,11 @@
       ctx.restore();
     }
     ctx.translate(x,y); ctx.rotate(angle);ctx.scale(scale,scale);
-    const color = c => ghostColor(c,tint);
-    const oval = (x,y,rx,ry,c) => { ctx.fillStyle=color(c); ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill(); };
+    const oval = (x,y,rx,ry,c) => { ctx.fillStyle=c; ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill(); };
     const dot = (x,y,r,c) => oval(x,y,r,r,c);
-    const box = (x,y,w,h,c,r=2) => { ctx.fillStyle=color(c);ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill(); };
-    const line = (points,c,width=1.5) => { ctx.strokeStyle=color(c);ctx.lineWidth=width;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke(); };
-    const poly = (points,c) => { ctx.fillStyle=color(c);ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill(); };
+    const box = (x,y,w,h,c,r=2) => { ctx.fillStyle=c;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill(); };
+    const line = (points,c,width=1.5) => { ctx.strokeStyle=c;ctx.lineWidth=width;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke(); };
+    const poly = (points,c) => { ctx.fillStyle=c;ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill(); };
     const eyes = (x, y=2) => { dot(x,-y,.65,'#213849');dot(x,y,.65,'#213849'); };
     const feet = c => { for (const side of [-1,1]) for(const front of [-1,1]) oval(front*4+stride*side*front,side*5.5,2.3,1.8,c); };
     switch (kind) {
@@ -36,7 +25,7 @@
         feet('#6c8293'); line([[-7,0],[-10,1.5]],'#6c8293',1);
         oval(-2,0,8,5.6,'#8fa5b4'); oval(3,-4.5,4,3.6,'#a9bcc7'); oval(3,4.5,4,3.6,'#a9bcc7');
         oval(5,0,4.7,4.7,'#8a9fae');
-        ctx.strokeStyle=color('#8a9fae');ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(8,0);ctx.quadraticCurveTo(14,0,12,4);ctx.stroke();
+        ctx.strokeStyle='#8a9fae';ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(8,0);ctx.quadraticCurveTo(14,0,12,4);ctx.stroke();
         line([[8,-2.4],[10.4,-2.7]],'#fff4d9',1.2);line([[8,2.4],[10,3]],'#fff4d9',1.2);
         oval(-3,-1.6,4.3,2.2,'#b4c7d0');eyes(7);break;
       case 'horse':
@@ -57,7 +46,7 @@
       case 'flamingo':
         line([[-3,-2],[-10,-3+stride]],'#a75d76',1);line([[-3,2],[-10,3-stride]],'#a75d76',1);
         oval(-3,0,6,4.3,'#ef85a6');oval(-4,-1.5,4.5,1.9,'#ffb5c9');
-        ctx.strokeStyle=color('#f99fbb');ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,1);ctx.bezierCurveTo(8,5,2,-4,8,-2);ctx.stroke();
+        ctx.strokeStyle='#f99fbb';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,1);ctx.bezierCurveTo(8,5,2,-4,8,-2);ctx.stroke();
         dot(8,-2,2.6,'#f99fbb');line([[10,-2],[11.5,0]],'#423d52',2);dot(9,-3,.7,'#333b49');break;
       case 'luggage':
         for(const y of [-6,6])for(const x of [-5,5])oval(x,y,2,1.4,'#4a5963');

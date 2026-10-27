@@ -25,12 +25,24 @@ for (let moves=0;moves<40;moves++) for(let y=20;y<280;y+=20) {
   const bus={...right,y};
   if(A.caravanBlocks(bus,caravan,moves))assert.ok(A.caravanBlocks(bus,{...caravan,count:12},moves),'Longer herds cannot uncover a blocked exit');
 }
-for (const count of [3,7,12]) for (const ahead of [0,1,2]) assert.equal(A.caravanMembers({...caravan,count},ahead).length,count,'Both previews contain the complete herd');
+for(const count of [3,7,12])assert.equal(A.caravanMembers({...caravan,count},0).length,count);
 for (const distance of [0,290,620,910,perimeter]) {
   const before=A.caravanPoint(caravan,distance-.01),after=A.caravanPoint(caravan,distance+.01);
   assert.ok(Math.hypot(before.x-after.x,before.y-after.y)<.03,'The path is continuous through each rounded corner');
 }
-assert.ok(Math.abs(A.caravanCenter(caravan,perimeter/66-1)-A.caravanCenter(caravan,perimeter/66+1))<1e-8,'The herd reverses continuously after one lap');
+for(const positions of [2,3,4])for(const direction of [-1,1]) {
+  const c={...caravan,phase:137,step:positions*caravan.spacing,direction},turns=A.caravanTravel(c,0).turns;
+  for(let moves=0;moves<turns*2+2;moves++) {
+    const travel=A.caravanTravel(c,moves),next=A.caravanCenter(c,moves+1);
+    const distance=((next-travel.center+perimeter*1.5)%perimeter)-perimeter/2;
+    assert.equal(travel.positions,positions);
+    assert.ok(Math.abs(distance-travel.direction*c.step)<1e-7,'Every departure advances the badge count in its indicated direction, even at reversals');
+  }
+  assert.equal(A.caravanTravel(c,turns-1).direction,direction);
+  assert.equal(A.caravanTravel(c,turns).direction,-direction);
+  assert.equal(A.caravanTravel(c,turns*2).direction,direction);
+}
+
 assert.equal(A.profile(121).paradeCount,3);assert.equal(A.profile(250).paradeCount,8);assert.equal(A.profile(500).paradeCount,12);
 const staged = { color: 0, cap: 16, filled: 7, stages: [{ color: 0, count: 8 }, { color: 1, count: 8 }] };
 assert.deepEqual({ ...A.loading(staged) }, { color: 0, left: 1, index: 0 });
@@ -55,7 +67,7 @@ G = start(171); assert.equal(B.chuteGateState(0).open,true); assert.equal(B.chut
 G = start(191); G.queue = [0, 1, 2, 3]; G.leftN = 4; G.ring.fill(3); G.ring[0] = null; G.ring[2] = null; const original = G.ring.slice();
 for (let i = 0; i < 1000 && G.queue.length === 4; i++) B.update(0.04);
 assert.equal(G.ring[1], original[1]); assert.equal(G.ring[3], original[3]); assert.equal(G.ring[0], 0); assert.equal(G.ring[2], 1); assert.equal(G.queue.length, 2);
-console.log('Rule checks passed: closures, turn counts, four-sided variable herds, rounded corners, full previews, staged loading, atomic links, transfers, switches, alternating feeds, partial-row refill.');
+console.log('Rule checks passed: closures, turn counts, four-sided variable herds, rounded corners, exact movement badges and reversals, staged loading, atomic links, transfers, switches, alternating feeds, partial-row refill.');
 function legacy(B) {
   for (let step = 0; step < 80000; step++) {
     B.update(0.04);

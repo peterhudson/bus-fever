@@ -35,12 +35,12 @@ After level 100, new chapters focus on the new rules, with mystery buses returni
 | --- | --- |
 | 101 | **Road crews:** an entire left, right or bottom exit closes for a visible number of departures. Waiting and blocked taps do not advance the countdown. |
 | 111 | **Mixed pairs:** rows contain pairs of colours. Passengers board individually, and empty places refill without replacing their neighbours. |
-| 121 | **Road parades:** groups of 3–12 follow an inner path around all four sides, flowing through corners while leaving the driving road clear. Entire faded groups marked 1 and 2 preview the next two moves. Longer parades block more exits. The characters match each setting. |
+| 121 | **Road parades:** groups of 3–12 follow an inner path around all four sides, flowing through corners while leaving the driving road clear. A single arrow-and-number badge shows direction and positions advanced per departure. Turnarounds happen between departures, so every advance covers the full displayed count. Longer parades block more exits. The characters match each setting. |
 | 131 | **Linked buses:** matching coloured outlines and chain numbers identify each pair; tapping either highlights both. They depart together, requiring two clear exit paths and two free bays. They count as two departures. |
 | 141 | **Switch pads:** dispatching the bus on the striped pad opens barrier A and closes barrier B. |
 | 151 | **Pairs and singles:** passenger rows can contain a pair and two singles. |
 | 161 | **Two-stage routes:** fill the first roof colour, then the second. The bay counter shows the active stage and its remaining passengers. |
-| 171 | **Alternating chutes:** green raised and red lowered gates mark the chute exits. Their badges count departures until the next switch; an empty chute yields to the other one. |
+| 171 | **Alternating chutes:** grey steel gates retract down and outward to open each chute. Counters below and outside the chutes count departures until the next switch; an empty chute yields to the other one. |
 | 181 | **Transfer tunnels:** a T-marked bus uses its first departure to move to the outlined destination and turn. It takes no bay until dispatched again. |
 | 191 | **Four-colour rows:** each person in a row can have a different colour. |
 
@@ -48,7 +48,7 @@ The carousel has a taller inner island, and the chutes join its upper curved cor
 
 Each level is set somewhere people line up for buses, from 12 miniature scenes that repeat: stadium, county fair, music festival, airport, factory, train station, ferry port, school, beach, ski resort, theme park and downtown. Each has its own scenery and gentle animation, including a turning Ferris wheel, stage lights, a passing train, surf and ski lifts. Scenery motion pauses with the game and respects your device's Reduce Motion setting.
 
-Parade art changes with the scene: elephants in the African savanna and Indian sanctuary, horses at the County Fair, penguins at the beach, lions at the stadium, flamingos at the festival, luggage carts at the airport, robots at the factory, toy trains at the station, seagulls at the ferry port, ducklings at school, skiers at the resort, dinosaurs at the theme park and dogs downtown. The two wildlife scenes include animated ponds and birds; wildlife, fair and beach parades use unpaved lots. All thirteen sprite designs have ground shadows and share identical rules and forecasts. The original twelve-theme cycle remains in place for levels without parades.
+Parade art changes with the scene: elephants in the African savanna and Indian sanctuary, horses at the County Fair, penguins at the beach, lions at the stadium, flamingos at the festival, luggage carts at the airport, robots at the factory, toy trains at the station, seagulls at the ferry port, ducklings at school, skiers at the resort, dinosaurs at the theme park and dogs downtown. The two wildlife scenes include animated ponds and birds; wildlife, fair and beach parades use unpaved lots. All thirteen sprite designs have ground shadows and share identical movement rules and badges. The original twelve-theme cycle remains in place for levels without parades.
 
 Early levels scatter a few buses around the lot. From level 5 they're packed tightly on a grid, and the carousel gets smaller as the levels go up. Its shape changes from level to level, from round to long and flat. Past level 45 levels keep getting harder up to level 100: more buses, a smaller carousel, more special buses and a more mixed-up line. By level 100 one wrong move almost always loses.
 
@@ -90,7 +90,7 @@ python3 -m http.server 8123
 - `game.js`: level generator, game logic and canvas rendering
 - `advanced.js`: chapter progression, road rules, bus routes and passenger planning after level 100
 - `scenery.js`: the level themes and the parking lot background
-- `parade-art.js`: thirteen native Canvas parade sprite designs, shadows and faded variants
+- `parade-art.js`: thirteen native Canvas parade sprite designs and ground shadows
 - `sw.js`: offline cache. Bump `VERSION` when shipping changes so installed copies update
 - `tools/autoplay.js`: Playwright bot that plays levels 1-50 to check difficulty
 - `tools/ui-checks.js`: Playwright checks for the power-up tray, Shop, touch targets and all 14 animated scenes at three phone sizes (`node tools/ui-checks.js`, with the local server running and Playwright installed)
@@ -98,7 +98,7 @@ python3 -m http.server 8123
 - `tools/headless.js`: minimal DOM adapter used by those simulations; executes the real `game.js` rules
 - `tools/advanced-ui-checks.js`: browser checks for boosters with linked, staged and transfer buses, current-rule help and carousel geometry
 
-Levels are seeded by their number. Through level 100, the generator finds a clearing order (following flip buses and tunnels) and builds the passenger line from it. Later chapters also simulate the complete solution through the real boarding and departure rules with four bays and no boosters before showing the level. Alternating feeds are planned by recording which chute supplies each passenger, then replaying both real queues. A candidate that fails this check is discarded. Verified advanced candidates are cached by level and screen size; different screen sizes may select a different candidate. Existing save data is retained. Parade length is controlled by `profile().paradeCount`: three members for the introduction, growing to twelve. The parade planner may reorder legal departures to accommodate a longer herd, and the complete result still has to pass the four-bay simulation. Its blocking footprint and drawing share one perimeter model, including the north edge and corners, at least twenty CSS pixels inside the driving road. Resizing preserves the parade’s generated route and turn positions; the carousel’s boarding timing can still vary with screen size. Parade levels reserve extra space around parked buses for the parade and both forecasts.
+Levels are seeded by their number. Through level 100, the generator finds a clearing order (following flip buses and tunnels) and builds the passenger line from it. Later chapters also simulate the complete solution through the real boarding and departure rules with four bays and no boosters before showing the level. Alternating feeds are planned by recording which chute supplies each passenger, then replaying both real queues. A candidate that fails this check is discarded. Verified advanced candidates are cached by level and screen size; different screen sizes may select a different candidate. Existing save data is retained. Parade length is controlled by `profile().paradeCount`: three members for the introduction, growing to twelve. The parade planner may reorder legal departures to accommodate a longer herd, and the complete result still has to pass the four-bay simulation. Its blocking footprint and drawing share one perimeter model, including the north edge and corners, at least twenty CSS pixels inside the driving road. Resizing preserves the parade’s generated route and turn positions; the carousel’s boarding timing can still vary with screen size. Parade levels reserve extra space around parked buses for the parade and its movement badge.
 
 Deployed with GitHub Pages from the `main` branch.
 

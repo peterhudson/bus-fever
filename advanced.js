@@ -5,12 +5,12 @@
   const chapters = [
     ['road', 'Road crews', 'A road crew closes one exit for the shown number of departures. Bumps and waiting do not advance it.'],
     ['pairs', 'Mixed pairs', 'Passengers now board individually. Rows can contain two pairs of colours; empty places refill without moving the people beside them.'],
-    ['caravan', 'Road parades', 'The parade follows the inside edge of the lot on all four sides, including corners. Longer groups block more exits. Faded groups marked 1 and 2 show the next two positions. Each departure advances the parade; the outer driving road stays clear.'],
+    ['caravan', 'Road parades', 'The parade follows the inside edge of the lot on all four sides, including corners. Longer groups block more exits. The arrow shows its direction, and the number shows how many positions it advances per departure. It reverses between departures after a circuit; the outer driving road stays clear.'],
     ['linked', 'Linked buses', 'Matching outlines and chain numbers identify a pair. Tap either bus to highlight both. They leave together: clear both paths and keep two bays free. The pair counts as two departures.'],
     ['switches', 'Switch pads', 'A bus on the striped switch pad changes the road barriers when it leaves: A opens and B closes. The barrier letters match the pad.'],
     ['trios', 'Pairs and singles', 'Rows can now contain a pair and two single passengers. Every person boards separately.'],
     ['stages', 'Two-stage routes', 'These buses load colour 1 first, then colour 2. Both coloured stages are shown on the roof. Fill both stages to free the bay.'],
-    ['alternating', 'Alternating chutes', 'A green open gate feeds passengers; a red lowered gate holds them back. Both gate badges count departures until they switch. An empty chute yields to the other one.'],
+    ['alternating', 'Alternating chutes', 'Steel gates slide outward to let passengers through, then close across the chute to hold them back. Counters below and outside the chutes show departures until they switch. An empty chute yields to the other one.'],
     ['transfers', 'Transfer tunnels', 'A T-marked bus first travels through tunnel T and returns at the matching outlined space, turned to the shown direction. This takes one departure, but no bay. Tap it again to send it to the station.'],
     ['singles', 'Four-colour rows', 'Rows can contain four different colours. Plan for individual passengers and partially filled buses.'],
   ];
@@ -48,10 +48,17 @@
   const crosses = (b, z) => { const e = exit(b); return e.side === z.side && Math.abs(e.position - z.center) < z.half + e.half; };
   const wrap = (value, length) => ((value % length) + length) % length;
   const caravanPerimeter = c => 2 * (c.bounds.x1 - c.bounds.x0 + c.bounds.y1 - c.bounds.y0);
-  function caravanCenter(c, moves) {
-    const perimeter = caravanPerimeter(c), t = wrap(c.phase + moves * c.step, perimeter * 2);
-    return t <= perimeter ? t : perimeter * 2 - t;
+  function caravanTravel(c, moves) {
+    const perimeter=caravanPerimeter(c);
+    // Reverse only between departures, so the badge always describes a full
+    // advance in one direction. One circuit is rounded to a whole turn.
+    const turns=Math.max(1,Math.round(perimeter/c.step)), t=wrap(moves,turns*2);
+    const returning=t>=turns, direction=(c.direction||1)*(returning?-1:1);
+    const distance=(returning?turns*2-t:t)*c.step;
+    return { center:wrap(c.phase+(c.direction||1)*distance,perimeter), direction,
+      positions:Math.round(c.step/c.spacing), turns };
   }
+  const caravanCenter=(c,moves)=>caravanTravel(c,moves).center;
   // Each animal has its own distance along one continuous, rounded route.
   function caravanPoint(c, distance) {
     const { x0, y0, x1, y1 } = c.bounds, w = x1 - x0, h = y1 - y0, perimeter = 2 * (w + h);
@@ -70,11 +77,10 @@
     return { x:x0+s-2*h-w, y:y0, tx:1, ty:0 };
   }
   function caravanMembers(c, moves) {
-    const center = caravanCenter(c, moves), perimeter = caravanPerimeter(c);
-    const forward = wrap(c.phase + moves * c.step, 2 * perimeter) < perimeter;
+    const {center,direction}=caravanTravel(c,moves);
     return Array.from({ length:c.count }, (_, i) => {
       const p = caravanPoint(c, center + (i - (c.count - 1) / 2) * c.spacing);
-      return { ...p, facing: Math.atan2(p.ty, p.tx) + (forward ? 0 : Math.PI) };
+      return { ...p, facing: Math.atan2(p.ty, p.tx) + (direction>0 ? 0 : Math.PI) };
     });
   }
   function caravanBlocks(b, c, moves) {
@@ -179,7 +185,7 @@
       const geometry = api.roadGeometry ? api.roadGeometry(L) : { bounds:{x0:0,y0:0,x1:330,y1:290}, scale:1 };
       const base = { bounds:geometry.bounds, count:p.paradeCount, spacing:22/geometry.scale, radius:12/geometry.scale };
       const perimeter = caravanPerimeter(base), candidates = [];
-      for (const speed of [66, 88, 44]) for (let i = 0; i < 96; i++) candidates.push({...base, phase:i*perimeter/48, step:speed/geometry.scale});
+      for (const speed of [66, 88, 44]) for (let i = 0; i < 96; i++) candidates.push({...base, phase:(i%48)*perimeter/48, direction:i<48?1:-1, step:speed/geometry.scale});
       const offset = Math.floor(rng() * candidates.length);
       const phases = candidates.slice(offset).concat(candidates.slice(0, offset));
       let chosen = phases.find(c => trace.every(t => !caravanBlocks(t.bus, c, t.moves)));
@@ -236,7 +242,7 @@
     L.queue = queue; L.rules = rules; L.solution = plan;
     return L;
   }
-  const api = { chapters, profile, exit, zone, crosses, caravanPerimeter, caravanCenter, caravanPoint, caravanMembers, caravanBlocks, blocked, stages, loading, decorate };
+  const api = { chapters, profile, exit, zone, crosses, caravanPerimeter, caravanTravel, caravanCenter, caravanPoint, caravanMembers, caravanBlocks, blocked, stages, loading, decorate };
   if (typeof module !== 'undefined') module.exports = api;
   if (typeof window !== 'undefined') window.Advanced = api;
 })();

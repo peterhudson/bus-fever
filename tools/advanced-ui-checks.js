@@ -12,13 +12,25 @@ function checkAdvancedUI() {
   G=start(131); b=G.buses.find(b=>b.link===1); G.slots[1]={};G.slots[2]={};G.slots[3]={};press(b);
   check(G.linkFocus===1 && G.linkFocusT>0 && b.state==='lot', 'Tapping a linked bus highlights both partners without spending a move on failure');
   G=start(171);
-  check(B.chuteGateState(0).open && !B.chuteGateState(1).open && B.chuteGateState(0).remaining===2,'Chute gates start green/open and red/closed with two departures remaining');
+  check(B.chuteGateState(0).open && !B.chuteGateState(1).open && B.chuteGateState(0).remaining===2,'Chute gates start retracted/open and extended/closed with two departures remaining');
+  for(const side of [0,1]) {
+    const gate=B.chuteGateGeometry(side),c=gate.counter,p=gate.p;
+    check(c.y>p.y && (side?c.x>p.x:c.x<p.x),'Gate counter is below and outside its chute');
+    const across=Math.abs((c.x-p.x)*-p.ty+(c.y-p.y)*p.tx);
+    check(across-c.r>22,'Gate counter clears the full passenger lane');
+    const r=$('#game').getBoundingClientRect(),button=$(side?'#btnShop':'#btnBoosters').getBoundingClientRect();
+    check(c.y+c.r<button.top-r.top || c.x+c.r<button.left-r.left || c.x-c.r>button.right-r.left,'Gate counter clears the Shop and Power-ups buttons');
+    check(side?gate.front<0:gate.front>=22,'Open steel gate retracts completely out of the lane');
+  }
   const order=G.buses.slice().sort((a,b)=>a.seq-b.seq);B.tryDispatch(order[0],false);
   check(B.chuteGateState(0).remaining===1 && B.chuteGateState(1).remaining===1,'Both chute gate counters decrement on a successful departure');
   B.tryDispatch(order[1],false);B.update(.3);
-  check(!B.chuteGateState(0).open && B.chuteGateState(1).open && G.chuteLift[1]>.9,'Two departures open the opposite chute gate');
+  check(!B.chuteGateState(0).open && B.chuteGateState(1).open && G.chuteSlide[1]>.9,'Two departures open the opposite chute gate');
   G=start(124); const herd=G.rules.caravan;
-  check(herd.count>3 && [1,2].every(a=>window.Advanced.caravanMembers(herd,a).length===herd.count),'Longer parades draw complete one- and two-move previews');
+  check(herd.count>3 && B.paradeIndicator().positions===Math.round(herd.step/herd.spacing),'Parade badge shows positions per departure, independently of group length');
+  const drawMember=window.ParadeArt.draw;let members=0;
+  try{window.ParadeArt.draw=(...args)=>{members++;return drawMember(...args);};B.draw();}finally{window.ParadeArt.draw=drawMember;}
+  check(members===herd.count,'Only the current parade is drawn, with no future ghost groups');
   const geometry=B.geometry,world=herd.bounds;
   check(Math.abs(geometry.lotX+world.x0*geometry.ls-geometry.road.x0-20)<.01 && Math.abs(geometry.lotY+world.y0*geometry.ls-geometry.road.y0-20)<.01 && Math.abs(geometry.road.x1-geometry.lotX-world.x1*geometry.ls-20)<.01 && Math.abs(geometry.road.y1-geometry.lotY-world.y1*geometry.ls-20)<.01, 'Parade collision and artwork stay twenty pixels inside all four road centre lines');
   const themes=window.Scenery;
