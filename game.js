@@ -837,7 +837,7 @@
     }
     const slot = freeSlot();
     if (slot < 0) { toast('All bays are full!'); b.shake = 0.3; sound('bump'); return; }
-    if (b.mystery) { b.mystery = false; b.flash = 0.4; }
+    // Blocked mystery buses stay hidden; revealFree handles cleared paths.
     const hit = pathHit(b, obstacles());
     if (hit) {
       b.bumpT = BUMP_DUR; b.bumpD = Math.max(0, hit.d - 2);
