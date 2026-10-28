@@ -85,6 +85,8 @@ Progress is saved on the phone (in the browser's local storage for the site).
 
 ## Development
 
+**Playtesting chapters:** open the game once with `?playtest` (for example `https://peterhudson.github.io/bus-fever/?playtest`). On that device, the pause menu then has **Playtest levels**: each chapter's tutorial, half-difficulty and first full level, with the chapter intro shown again. **Back to my level N** returns to the level you were on.
+
 It's plain HTML, CSS and JavaScript with no build step.
 
 ```sh
