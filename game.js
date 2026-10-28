@@ -712,13 +712,19 @@
     G.box = levelBox(); fitLot(); ringLayout(); revealFree();
     G.chuteSlide = [0,1].map(side => chuteGateState(side).open ? 1 : 0);
   }
+  // Nothing more will happen until the next tap: nobody can board or join
+  // the carousel. Playing the plan only from such moments keeps the result
+  // the same at any frame rate.
+  const settled = () => !G.particles.length && G.shift <= 0.05 && G.feedShift.every(f => f <= 0.05) &&
+    !G.buses.some(b => b.state === 'slot' && A.loading(b).left >= (G.rules ? 1 : LANES) && G.ring.includes(A.loading(b).color)) &&
+    !(G.queue.length && G.ring.some((c, k) => (G.rules || k % LANES === 0) && c === null));
   function runSolution(dt = 0.04, maxSteps = 120000) {
     let step = 0, index = 0;
     while (step++ < maxSteps) {
       update(dt);
       if (G.won) return { won: true, steps: step };
       if (G.boom || G.validationFailed || G.modal) return { won: false, index, reason: 'stuck' };
-      if (movingBuses()) continue;
+      if (movingBuses() || !settled()) continue;
       const action = G.solution[index];
       if (!action) continue;
       const b = G.buses.find(o => o.seq === action.ids[0]);

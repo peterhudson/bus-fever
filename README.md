@@ -40,7 +40,7 @@ After level 100, a new rule arrives every 10 levels. The first level of each cha
 | 141 | **Switch pads:** dispatching the bus on the striped pad opens barrier A and closes barrier B. |
 | 151 | **Pairs and singles:** passenger rows can contain a pair and two singles. |
 | 161 | **Two-stage routes:** fill the first roof colour, then the second. The bay counter shows the active stage and its remaining passengers. |
-| 171 | **Alternating chutes:** grey steel gates retract down and outward to open each chute. Counters below and outside the chutes count departures until the next switch; an empty chute yields to the other one. |
+| 171 | **Alternating chutes:** grey steel gates retract down and outward to open each chute. The chutes switch every 1 to 4 departures, depending on the level (every 2 in the tutorial). Counters below and outside the chutes count departures until the next switch; an empty chute yields to the other one. |
 | 181 | **Transfer tunnels:** a T-marked bus uses its first departure to move to the outlined destination and turn. It takes no bay until dispatched again. |
 | 191 | **Four-colour rows:** each person in a row can have a different colour. |
 
