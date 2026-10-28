@@ -96,7 +96,7 @@ for (const [w,h] of [[320,580],[430,850]]) {
   console.log(`${w}×${h}: all 22 sampled levels won at 20 fps, through level 1000`);
 }
 
-const resized=loadGame();resized.B.save.level=250;resized.B.startLevel();resized.B.G.validating=true;
+const resized=loadGame();resized.B.save.level=129;resized.B.startLevel();resized.B.G.validating=true;
 const routeBefore=JSON.stringify(resized.B.G.rules.caravan);resized.resize(320,580);
 assert.equal(JSON.stringify(resized.B.G.rules.caravan),routeBefore,'Resizing must preserve the generated parade route and move positions');
 assert.ok(resized.B.runSolution(.05).won,'The verified parade solution still wins after resizing');

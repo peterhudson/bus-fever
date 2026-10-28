@@ -14,9 +14,15 @@
     ['transfers', 'Transfer tunnels', 'A T-marked bus first travels through tunnel T and returns at the matching outlined space, turned to the shown direction. This takes one departure, but no bay. Tap it again to send it to the station.'],
     ['singles', 'Four-colour rows', 'Rows can contain four different colours. Plan for individual passengers and partially filled buses.'],
   ];
+  // Each chapter brings one new rule, ten levels apart. Its first level is a
+  // trivial tutorial with only the new rule. The second plays at about half the
+  // difficulty of its level number (the board of level n/2). From the third on
+  // levels are at full difficulty: the level-100 board with every older piece,
+  // the new rule and up to two rules from earlier chapters.
   function profile(n) {
     if (n <= 100) return null;
     const chapter = Math.min(9, Math.floor((n - 101) / 10)), lesson = (n - 101) % 10;
+    const stage = n > 200 ? 'full' : lesson === 0 ? 'tutorial' : lesson === 1 ? 'half' : 'full';
     const keys = n <= 200 ? [chapters[chapter][0]] : [
       ['road', 'pairs', 'linked'], ['caravan', 'stages', 'trios'], ['switches', 'linked', 'singles'],
       ['alternating', 'pairs', 'stages'], ['transfers', 'switches', 'trios'],
@@ -24,12 +30,19 @@
       ['road', 'stages', 'transfers'], ['switches', 'alternating', 'singles'],
       ['caravan', 'switches', 'linked', 'stages', 'alternating', 'transfers', 'singles'],
     ][(n - 201) % 10].slice();
-    if (n <= 200 && lesson >= 4 && chapter > 0) keys.push(chapters[chapter - 1][0]);
+    if (n <= 200 && stage === 'full') {
+      const earlier = chapters.slice(0, chapter).map(c => c[0]);
+      let seed = (n * 2654435761) >>> 0;
+      const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+      for (let k = Math.min(2, earlier.length); k > 0; k--) keys.push(earlier.splice(Math.floor(rnd() * earlier.length), 1)[0]);
+    }
     const p = Object.fromEntries(keys.map(k => [k, true]));
     p.mix = p.singles ? 1 : p.trios ? 3 : p.pairs ? 2 : 4;
-    p.teaching = n <= 200 && lesson < 3;
-    p.target = p.teaching ? 18 : Math.min(42, 24 + Math.floor((n - 101) / 20) * 2);
-    p.colors = p.teaching ? 4 : Math.min(8, 5 + Math.floor((n - 101) / 40));
+    p.stage = stage;
+    p.teaching = stage === 'tutorial';
+    // the older generator's level to build the board at; 0 = tutorial board
+    p.level = stage === 'tutorial' ? 0 : stage === 'half' ? Math.round(n / 2) : n;
+    p.target = 12; p.colors = 3;   // tutorial board
     p.paradeCount = p.teaching ? 3 : Math.min(12, 4 + Math.floor(Math.max(0, n - 121) / 30));
     return p;
   }
@@ -148,13 +161,16 @@
       });
     }
     if (p.transfers) {
-      const b = order[Math.min(3, order.length - 1)];
+      // A bus a third of the way through the order, so on a crowded lot it can
+      // land where earlier buses were parked
+      const b = order[Math.min(Math.max(3, Math.floor(order.length / 3)), order.length - 1)];
+      const later = order.filter(o => o.seq > b.seq), fixed = L.tunnels.concat(later);
       let destination = null;
-      for (let y = 30; y <= 260 && !destination; y += 24) for (let x = 30; x <= 300 && !destination; x += 24) {
-        const candidate = { ...b, x, y, ang: b.ang + Math.PI / 2, len: b.len + 8, wid: b.wid + 8 };
+      for (const turn of [Math.PI / 2, -Math.PI / 2]) for (let y = 30; y <= 260 && !destination; y += 12) for (let x = 30; x <= 300 && !destination; x += 12) {
+        const candidate = { ...b, x, y, ang: b.ang + turn, len: b.len + 8, wid: b.wid + 8 };
         const pts = api.corners(x, y, candidate.ang, candidate.len, candidate.wid);
         if (pts.some(([px, py]) => px < 4 || px > 326 || py < 4 || py > 286)) continue;
-        if (L.buses.some(o => obbOverlap(candidate, o)) || pathHit(candidate, order.filter(o => o.seq > b.seq))) continue;
+        if (fixed.some(o => obbOverlap(candidate, o)) || pathHit(candidate, fixed)) continue;
         destination = { x, y, ang: candidate.ang };
       }
       if (!destination) return null;
@@ -164,7 +180,7 @@
       let linked = 0;
       for (let i = 0; i < order.length - 1; i++) {
         const a = order[i], b = order[i + 1];
-        if (a.transfer || b.transfer || a.link || b.link || pathHit(b, order.slice(i))) continue;
+        if (a.transfer || b.transfer || a.link || b.link || a.ice || b.ice || a.lock != null || b.lock != null || pathHit(b, order.slice(i))) continue;
         a.link = b.link = ++linked;
         if (linked === (p.teaching ? 1 : 2)) break;
         i++;
