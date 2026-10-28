@@ -1,5 +1,5 @@
 // Deterministic rules and full-game regression checks. No browser dependencies.
-// node tools/mechanics-checks.js [last-level, default 210]
+// node tools/mechanics-checks.js [last-level, default 270]
 'use strict';
 const assert = require('node:assert/strict');
 const loadGame = require('./headless');
@@ -79,7 +79,40 @@ function legacy(B) {
   }
   return false;
 }
-const end = Number(process.argv[2] || 210), first = Number(process.argv[3] || 1), failed = []; let maximumMs = 0;
+// Levels 201+: one check per new chapter, on its tutorial level
+{
+  const seats = p => p >= 16 ? 2 : 1, all = G => G.ring.filter(p => p !== null).concat(G.queue);
+  let G = start(221);
+  assert.ok(all(G).some(p => p >= 16), 'Luggage levels have passengers with suitcases');
+  assert.equal(all(G).reduce((n, p) => n + seats(p), 0), G.buses.reduce((n, b) => n + b.cap, 0), 'Suitcases take two seats and every seat is filled');
+  G = start(211);
+  const hidden = G.buses.find(b => b.inFog);
+  assert.ok(hidden && G.buses.some(b => b.windmill), 'Fog levels have hidden buses and windmill buses');
+  assert.equal(B.tryDispatch(hidden, false), false, 'A bus under the fog cannot leave');
+  assert.ok(B.runSolution(1 / 60).won && G.fog.lifted, 'The fog lifts once the windmill buses have gone');
+  G = start(231);
+  const chameleon = G.buses.find(b => b.cycle);
+  assert.equal(chameleon.color, chameleon.cycle[0]);
+  B.tryDispatch(G.buses.find(b => b.seq === G.solution[0].ids[0]), false);
+  assert.equal(chameleon.color, chameleon.cycle[1 % chameleon.cycle.length], 'Chameleons change colour with each departure');
+  G = start(241);
+  const turning = G.buses.find(b => b.turntable), ang = turning.ang;
+  B.tryDispatch(G.buses.find(b => b.seq === G.solution[0].ids[0]), false);
+  assert.ok(Math.abs(turning.ang - ang - Math.PI / 2) < 1e-9, 'Turntables turn a quarter turn clockwise per departure');
+  G = start(251);
+  const towed = G.buses.find(b => b.tow), from = [towed.x, towed.y];
+  assert.ok(B.runSolution(1 / 60).won);
+  G = start(251);
+  let moved = false;
+  for (const a of G.solution) { const b = G.buses.find(o => o.seq === a.ids[0]); if (b === G.buses.find(o => o.tow)) break; B.tryDispatch(b, false); for (let i = 0; i < 200; i++) B.update(1 / 60); const t = G.buses.find(o => o.tow); if (t.x !== from[0] || t.y !== from[1]) { moved = true; break; } }
+  assert.ok(moved, 'A tow truck pulls its bus forward into a gap');
+  G = start(201);
+  let parked = false;
+  for (let i = 0; i < 120000 && !G.won && !parked; i++) { B.update(1 / 60); parked = G.slots.some(s => s && s.rv); if (!G.buses.some(b => ['exiting', 'driving', 'flying'].includes(b.state))) { const a = G.solution.find(a => G.buses.find(o => o.seq === a.ids[0]).state === 'lot'); if (a) B.tryDispatch(G.buses.find(o => o.seq === a.ids[0]), false); } }
+  assert.ok(parked, 'The RV squats in a bay when its counter runs out');
+  console.log('New chapters: luggage, fog, chameleons, turntables, tow trucks and the RV behave as described');
+}
+const end = Number(process.argv[2] || 270), first = Number(process.argv[3] || 1), failed = []; let maximumMs = 0;
 for (let n = first; n <= end; n++) {
   const t = performance.now(); G = start(n); maximumMs = Math.max(maximumMs, performance.now() - t);
   const boosters = JSON.stringify(B.save.boosters), won = n <= 100 ? legacy(B) : B.runSolution(1 / 60).won;
@@ -89,7 +122,7 @@ for (let n = first; n <= end; n++) {
 assert.deepEqual(failed, []);
 for (const [w,h] of [[320,580],[430,850]]) {
   const { B: phone } = loadGame(w,h);
-  for (const n of [100,101,111,121,131,141,151,161,171,181,191,201,204,205,206,207,208,209,210,250,500,1000]) {
+  for (const n of [100,101,111,121,131,141,151,161,171,181,191,201,204,207,211,221,231,241,251,261,270,500,1000]) {
     phone.save.level=n; phone.startLevel(); phone.G.validating=true;
     assert.ok(n<=100 ? legacy(phone) : phone.runSolution(0.05).won, `Level ${n} at ${w}×${h}`);
   }

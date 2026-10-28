@@ -29,7 +29,7 @@ Special pieces show up as you go:
 - **Gates (from level 70)** sit in the lot like cones but open and close as buses leave. An N-gate is shut for N moves, then open for N moves. The badge counts the moves until it changes. Gates only go where the winning order finds them open.
 - **HARD levels (every 10th level)** have a smaller carousel and pay double coins. Through level 100, they also pack buses into shapes such as a ring, plus, diamond or L.
 
-After level 100, a new rule arrives every 10 levels. The first level of each chapter is a small tutorial with only the new rule. The second plays at about half difficulty: the board of half its level number, plus the new rule. From the third level on, the board is back at full level-100 difficulty, with every older piece except tunnels, plus the new rule and up to two rules from earlier chapters. Flip buses stay off when a rule depends on which exit a bus uses. From level 201, the rules appear in combinations at full difficulty.
+After level 100, a new rule arrives every 10 levels. The first level of each chapter is a small tutorial with only the new rule. The second plays at about half difficulty: the board of half its level number, plus the new rule. From the third level on, the board is back at full level-100 difficulty, with every older piece except tunnels, plus the new rule and up to two rules from earlier chapters. Flip buses stay off when a rule depends on which exit a bus uses. From level 261, every level combines three random rules at full difficulty (five on every tenth level). Turntables and tow trucks move buses, so they never combine with exit rules or fog, and tunnel gates stay off with them.
 
 | Starts at | New challenge |
 | --- | --- |
@@ -43,6 +43,12 @@ After level 100, a new rule arrives every 10 levels. The first level of each cha
 | 171 | **Alternating chutes:** grey steel gates retract down and outward to open each chute. The chutes switch every 1 to 4 departures, depending on the level (every 2 in the tutorial). Counters below and outside the chutes count departures until the next switch; an empty chute yields to the other one. |
 | 181 | **Transfer tunnels:** a T-marked bus uses its first departure to move to the outlined destination and turn. It takes no bay until dispatched again. |
 | 191 | **Four-colour rows:** each person in a row can have a different colour. |
+| 201 | **RV squatter:** a tourist RV circles the perimeter road with a countdown. At zero it parks in a free bay, or hovers until one frees up and takes it at once. It stays for the shown number of departures, then drives off and comes back later. Its lines plan for three buses at a time. |
+| 211 | **Fog and windmills:** fog hides a band of the lot. Buses under it can’t leave until every windmill bus has left; the fog shows how many are left. |
+| 221 | **Luggage:** some passengers tow a silver suitcase and take two seats. A bus with one seat left can’t take them. |
+| 231 | **Chameleon buses:** they change colour with every departure, cycling through the dots on their side, and keep the colour they have when they leave. |
+| 241 | **Turntables:** a bus on a turntable turns a quarter turn clockwise each time another bus leaves. |
+| 251 | **Tow trucks:** a bus with a tow truck is pulled forward into any gap that opens ahead of it whenever a bus leaves. |
 
 The carousel has a taller inner island, and the chutes join its upper curved corners, leaving more room for the miniature scenery. The island shows departure counts; alternating-feed chapters put their counters on the gates instead. **Menu → This level’s rules** explains the current combination. Roadblocks restrict the exit from the lot; buses already on the perimeter road can continue to the bays.
 

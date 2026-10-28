@@ -28,6 +28,9 @@
     { c: '#ffffff', d: '#8e9bb0', l: '#ffffff' }, // white
   ];
 
+  // A passenger is a color number; BAG is added for one towing a suitcase,
+  // who takes two seats
+  const BAG = 16, colorOf = (p) => p & 15, seatsOf = (p) => (p >= BAG ? 2 : 1);
   const COLOR_NAMES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan', 'brown', 'white'];
   const MYSTERY = { c: '#64748b', d: '#334155', l: '#94a3b8' };
   const A = window.Advanced;
@@ -124,6 +127,21 @@
       for (const o of cands) if (obbOverlap(probe, o)) return { d, other: o };
     }
     return null;
+  }
+
+  // Tow trucks pull their bus forward into any gap that has opened ahead of
+  // it, stopping a little short of whatever is in the way. Returns how far
+  // each one moved.
+  function towStep(lot, fixed) {
+    const moved = [];
+    for (const o of lot.filter(q => q.tow).sort((a, c) => a.seq - c.seq)) {
+      const hit = pathHit(o, lot.concat(fixed));
+      if (!hit || hit.d <= 10) continue;
+      const d = hit.d - 6;
+      o.x += Math.cos(o.ang) * d; o.y += Math.sin(o.ang) * d;
+      moved.push([o, d]);
+    }
+    return moved;
   }
 
   // ---------- Level generation ----------
@@ -286,7 +304,10 @@
       for (const o of group) trace.push({ bus: { ...o }, ref: o.ref, moves, sent, transfer: !!a.transfer });
       if (a.transfer) { Object.assign(group[0], group[0].ref.transfer); moves++; continue; }
       for (const o of group) lot.splice(lot.indexOf(o), 1);
-      for (let k = 0; k < group.length; k++) for (const o of lot) if (o.flip) o.ang += Math.PI;
+      for (let k = 0; k < group.length; k++) {
+        for (const o of lot) { if (o.flip) o.ang += Math.PI; if (o.turntable) o.ang += Math.PI / 2; }
+        towStep(lot, L.tunnels);
+      }
       moves += group.length; sent += group.length;
     }
     return trace;
@@ -368,18 +389,19 @@
       // stay off when a rule depends on exits. Alternating chutes cap colours
       // at 8, since with 10 the verified plan too often depends on frame rate.
       const lvl = advanced.level, f = lvl ? levelFeatures(lvl) : null;
-      const exits = ['road', 'caravan', 'switches', 'transfers', 'linked'].some((k) => advanced[k]);
+      const exits = ['road', 'caravan', 'switches', 'transfers', 'linked', 'turntables', 'towing'].some((k) => advanced[k]);
+      const movers = advanced.turntables || advanced.towing;
       const features = f
         ? { ...f, level: lvl, tunnels: 0, gates: 0, flips: exits ? 0 : f.flips, colors: Math.min(2 + Math.floor((lvl + 2) / 3), advanced.alternating ? 8 : COLORS.length) }
         : { mystery: 0, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0, gates: 0, target: advanced.target, colors: advanced.colors };
       const p = { ...advanced, colors: features.colors };
       for (let attempt = firstAttempt; attempt < firstAttempt + 160; attempt++) {
         const L = buildLevel(n, attempt, features);
-        if (!L || !A.decorate(L, p, mulberry32(n * 997 + attempt * 31), { pathHit, obbOverlap, corners, roadGeometry })) continue;
+        if (!L || !A.decorate(L, p, mulberry32(n * 997 + attempt * 31), { pathHit, obbOverlap, corners, roadGeometry, towStep })) continue;
         const trace = planTrace(L);
         if (!trace) continue;
         fitPiecesToPlan(L, trace);
-        if (f && f.gates && L.buses.free) {
+        if (f && f.gates && !movers && L.buses.free) {
           const landing = L.buses.filter((b) => b.transfer).map((b) => ({ ...b, ...b.transfer }));
           placeGates(L.buses.free, L.tunnels, trace, f.gates, mulberry32(n * 31 + attempt), landing);
         }
@@ -703,6 +725,8 @@
       modal: false, won: false, stuckT: 0, checkT: 0, failDismissed: false,
       rules: L.rules ? { ...L.rules, caravan: L.rules.caravan ? { ...L.rules.caravan, bounds:{...L.rules.caravan.bounds} } : undefined } : undefined, solution: L.solution, switched: false,
       paradeMoves:0, paradeFrom:0, paradeT:0, linkFocus:null, linkFocusT:0, chuteSlide:[0,0],
+      fog: L.rules?.fog ? { ...L.rules.fog, lifted: false, fade: 1 } : null,
+      rv: L.rules?.rv ? { mode: 'road', count: L.rules.rv.first, stay: 0, slot: -1, seen: 0, d: 0, t: 1 } : null,
       validating, planning, recordedFeeds: [[], []], validationFailed: false,
     };
     for (let k = 0; k < G.ring.length && G.queue.length; k++) G.ring[k] = G.queue.shift();
@@ -712,11 +736,13 @@
     G.box = levelBox(); fitLot(); ringLayout(); revealFree();
     G.chuteSlide = [0,1].map(side => chuteGateState(side).open ? 1 : 0);
   }
+  // Someone on the carousel can board bus b
+  const canTake = (b) => { const load = A.loading(b); return G.ring.some((p) => p !== null && colorOf(p) === load.color && (G.rules ? seatsOf(p) : LANES) <= load.left); };
   // Nothing more will happen until the next tap: nobody can board or join
   // the carousel. Playing the plan only from such moments keeps the result
   // the same at any frame rate.
   const settled = () => !G.particles.length && G.shift <= 0.05 && G.feedShift.every(f => f <= 0.05) &&
-    !G.buses.some(b => b.state === 'slot' && A.loading(b).left >= (G.rules ? 1 : LANES) && G.ring.includes(A.loading(b).color)) &&
+    !G.buses.some(b => b.state === 'slot' && A.loading(b).left >= (G.rules ? 1 : LANES) && canTake(b)) &&
     !(G.queue.length && G.ring.some((c, k) => (G.rules || k % LANES === 0) && c === null));
   function runSolution(dt = 0.04, maxSteps = 120000) {
     let step = 0, index = 0;
@@ -771,7 +797,8 @@
     else if (!G.modal) toast(`${theme.icon} ${theme.name}`, 1400);
   }
   function makeBus(b, id) {
-    return { ...b, id, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0, flipT: 0, emergeT: 0 };
+    return { ...b, id, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0, flipT: 0, emergeT: 0, turnT: 0, towT: 0, towD: 0,
+      color: b.cycle ? b.cycle[0] : b.color };
   }
 
   // Obstacles in the lot: parked buses and tunnels
@@ -783,7 +810,7 @@
   function revealFree() {
     const obs = obstacles();
     for (const b of obs) {
-      if (b.mystery && !b.tunnel && !pathHit(b, obs) && !roadBlock(b)) { b.mystery = false; b.flash = 0.4; }
+      if (b.mystery && !b.tunnel && !fogged(b) && !pathHit(b, obs) && !roadBlock(b)) { b.mystery = false; b.flash = 0.4; }
     }
   }
 
@@ -861,6 +888,7 @@
     let x = b.x, y = b.y;
     let d = extra;
     if (b.state === 'lot' && b.bumpT > 0) d += b.bumpD * Math.sin(Math.PI * (1 - b.bumpT / BUMP_DUR));
+    if (b.towT > 0) d -= b.towD * easeInOut(b.towT / 0.35);
     x += Math.cos(b.ang) * d; y += Math.sin(b.ang) * d;
     if (b.shake > 0) { x += Math.sin(b.shake * 60) * 1.5; }
     if (b.emergeT > 0) {
@@ -868,7 +896,7 @@
       const back = (b.emergeT / 0.35) * (b.len / 2 + TUNNEL / 2);
       x -= Math.cos(b.ang) * back; y -= Math.sin(b.ang) * back;
     }
-    const ang = b.ang - Math.PI * (b.flipT / 0.3);
+    const ang = b.ang - Math.PI * (b.flipT / 0.3) - (Math.PI / 2) * easeInOut(b.turnT / 0.35);
     return { x: lotX + x * ls, y: lotY + y * ls, ang, s: ls };
   }
   function slotPose(i) {
@@ -995,6 +1023,7 @@
     G.failDismissed = false;
     if (b.link && notify) { G.linkFocus = b.link; G.linkFocusT = 1.5; }
     if (G.paradeT > 0) return false;
+    if (fogged(b)) return fail('Hidden in the fog. Send every windmill bus first.');
     if (b.ice > 0) return fail(`Frozen! ${b.ice} more buses must leave first`);
     if (b.lock != null) return fail(`Locked: a ${COLOR_NAMES[b.lock]} bus must leave first`);
     if (G.vipMode) {
@@ -1018,7 +1047,7 @@
     if (b.transfer && !b.transferred) {
       const destination = { ...b, ...b.transfer };
       if (obstacles().some(o => o !== b && obbOverlap(destination, o))) return fail('The transfer destination is occupied');
-      b.from = lotPose(b); b.state = 'transferring'; b.t = 0; G.arrivals++;
+      b.from = lotPose(b); b.state = 'transferring'; b.t = 0; G.arrivals++; afterDeparture(b);
       advanceParade(); revealFree(); sound('magic'); return true;
     }
     const slots = [];
@@ -1034,6 +1063,7 @@
   function canDispatch(b) {
     const group = b.link ? lotBuses().filter(o => o.link === b.link) : [b];
     const obs = obstacles();
+    if (group.some(fogged)) return false;
     if (group.some(o => o.ice || o.lock != null || pathHit(o, obs) || roadBlock(o))) return false;
     if (b.transfer && !b.transferred) return !obs.some(o => o !== b && obbOverlap({ ...b, ...b.transfer }, o));
     return G.slots.slice(1, bays() + 1).filter(slot => !slot).length >= group.length;
@@ -1050,13 +1080,27 @@
     for (const o of lotBuses()) {
       if (o === b) continue;
       if (o.flip) { o.ang += Math.PI; o.flipT = 0.3; }
+      if (o.turntable) { o.ang += Math.PI / 2; o.turnT = G.validating ? 0 : 0.35; }
       // Ice melts a little, and the key opens locks of its color
       if (o.ice > 0) { o.ice--; if (!o.ice) o.flash = 0.4; }
       if (o.lock === b.color) { o.lock = null; o.flash = 0.4; }
       if (o.bomb > 0 && !--o.bomb && !G.boom) { G.boom = o; setTimeout(() => showBoom(o), 450); }
     }
+    afterDeparture(b);
     if (!defer) { advanceParade(); revealFree(); sound('go'); }
   }
+
+  // Chameleons change colour, tow trucks close up, and the fog lifts once
+  // the last windmill bus has gone
+  function afterDeparture(b) {
+    for (const o of lotBuses()) if (o.cycle && o !== b) { o.color = o.cycle[G.arrivals % o.cycle.length]; o.flash = 0.25; }
+    if (G.buses.some(o => o.tow && o.state === 'lot')) {
+      const lot = lotBuses().filter(o => o !== b);
+      for (const [o, d] of towStep(lot, G.tunnels.filter(t => !t.gate || !gateOpen(t, G.arrivals)))) { o.towD = d; o.towT = G.validating ? 0 : 0.35; }
+    }
+    if (G.fog && !G.fog.lifted && !lotBuses().some(o => o.windmill && o !== b)) { G.fog.lifted = true; if (!G.validating) sound('magic'); }
+  }
+  const fogged = (b) => !!(G.fog && !G.fog.lifted && b.inFog);
 
   function advanceParade() {
     if (!G.rules?.caravan) return;
@@ -1088,6 +1132,8 @@
       if (b.shake > 0) b.shake = Math.max(0, b.shake - dt);
       if (b.flash > 0) b.flash = Math.max(0, b.flash - dt);
       if (b.flipT > 0) b.flipT = Math.max(0, b.flipT - dt);
+      if (b.turnT > 0) b.turnT = Math.max(0, b.turnT - dt);
+      if (b.towT > 0) b.towT = Math.max(0, b.towT - dt);
       if (b.emergeT > 0) b.emergeT = Math.max(0, b.emergeT - dt);
       switch (b.state) {
         case 'lot':
@@ -1153,6 +1199,9 @@
       G.shift += fed; G.feedShift[side] += fed;
     }
 
+    updateRV(dt);
+    if (G.fog?.lifted) G.fog.fade = Math.max(0, G.fog.fade - dt / 0.9);
+
     // Boarding: matching riders hop onto a parked bus as they pass
     // in front of its bay along the bottom of the carousel. Bays beyond the
     // ends of a small carousel are reached from its curved ends.
@@ -1162,11 +1211,12 @@
       const parked = G.buses.filter(b => b.state === 'slot').map(b => ({ b, load: A.loading(b) }));
       for (const { b, load } of parked) {
         if (load.left < (G.rules ? 1 : LANES)) continue;
-        // Buses of the same color fill in the order they arrived
-        if (parked.some(o => o.b !== b && o.load.color === load.color && o.load.left >= (G.rules ? 1 : LANES) && o.b.arrive < b.arrive)) continue;
         const to = slotPose(b.slot), tx = Math.max(ringXL - ringR * 0.7, Math.min(ringXR + ringR * 0.7, to.x));
         for (let k = 0; k < G.ring.length; k += G.rules ? 1 : LANES) {
-          if ((G.rules ? G.ring[k] : rowColor(k)) !== load.color || !nearBays(seatS(k))) continue;
+          if ((G.rules ? (G.ring[k] === null ? null : colorOf(G.ring[k])) : rowColor(k)) !== load.color || !nearBays(seatS(k))) continue;
+          // A passenger takes the oldest bus of their color with room for them
+          const need = G.rules ? seatsOf(G.ring[k]) : LANES;
+          if (load.left < need || parked.some(o => o.b !== b && o.load.color === load.color && o.load.left >= need && o.b.arrive < b.arrive)) continue;
           const p = ringPoint(seatS(k));
           if (Math.abs(p.x - tx) > slotW / 2 + slotGap + 4) continue;
           const d = Math.abs(p.x - tx) + b.arrive * 1000;
@@ -1179,9 +1229,10 @@
         const color = A.loading(b).color;
         for (let j = 0; j < groupSize; j++) {
           const p = seatPoint(k + j);
+          const person = G.ring[k + j];
           G.ring[k + j] = null;
-          b.filled++; b.pending++;
-          G.particles.push({ x0: p.x, y0: p.y, bus: b, t: -j * 0.15, color });
+          b.filled += G.rules ? seatsOf(person) : 1; b.pending++;
+          G.particles.push({ x0: p.x, y0: p.y, bus: b, t: -j * 0.15, color: G.rules ? person : color });
         }
         G.boardT += BOARD_GAP * groupSize;
         sound('pop');
@@ -1221,7 +1272,7 @@
     G.checkT -= dt;
     if (G.checkT > 0) { if (G.stuckT > 0) G.stuckT += dt; return; }
     G.checkT = 0.25;
-    const canBoard = G.buses.some(b => b.state === 'slot' && A.loading(b).left >= (G.rules ? 1 : LANES) && G.ring.includes(A.loading(b).color));
+    const canBoard = G.buses.some(b => b.state === 'slot' && A.loading(b).left >= (G.rules ? 1 : LANES) && canTake(b));
     const canFeed = G.queue.length > 0 && G.ring.some((c, k) => (G.rules || k % LANES === 0) && c === null);
     let stuck = false;
     if (!canBoard && !canFeed) {
@@ -1244,8 +1295,8 @@
     ctx.closePath();
   }
 
-  function drawPerson(x, y, color, s = 1) {
-    const col = COLORS[color];
+  function drawPerson(x, y, person, s = 1) {
+    const col = COLORS[colorOf(person)];
     ctx.fillStyle = 'rgba(0,0,0,0.15)';
     ctx.beginPath(); ctx.ellipse(x + 1, y + 3 * s, 5.5 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
     // round body, head on top, and a shine on the head
@@ -1255,6 +1306,18 @@
     ctx.beginPath(); ctx.arc(x, y - 2.6 * s, 3.7 * s, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.beginPath(); ctx.arc(x - 1.2 * s, y - 3.8 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
+    if (person >= BAG) {
+      // a silver roll-aboard suitcase in front of them, with ribs and a
+      // pulled-up handle, so it shows even in a crowded row
+      const bx = x + 1.5 * s, by = y - 1 * s, w = 7.5 * s, h = 9 * s;
+      const g = ctx.createLinearGradient(bx, 0, bx + w, 0);
+      g.addColorStop(0, '#f8fafc'); g.addColorStop(0.5, '#cbd5e1'); g.addColorStop(1, '#94a3b8');
+      ctx.strokeStyle = '#334155'; ctx.lineWidth = 1.1 * s;
+      ctx.beginPath(); ctx.moveTo(bx + w / 2, by); ctx.lineTo(bx + w / 2, by - 4 * s); ctx.lineTo(bx + w / 2 - 2 * s, by - 4 * s); ctx.stroke();
+      ctx.fillStyle = g; rr(bx, by, w, h, 1.8 * s); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(51,65,85,0.55)'; ctx.lineWidth = 0.7 * s;
+      for (const f of [0.3, 0.5, 0.7]) { ctx.beginPath(); ctx.moveTo(bx + w * f, by + 1.2 * s); ctx.lineTo(bx + w * f, by + h - 1.2 * s); ctx.stroke(); }
+    }
   }
 
   function drawBus(b, pose, mode) {
@@ -1375,6 +1438,37 @@
       rr(-10, W / 2 + 1, 20, 12, 4); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.font = '800 8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(b.link ? `↔${b.link}` : 'T ↗', 0, W / 2 + 7); ctx.restore();
+    }
+    if (b.cycle && mode === 'arrow') {
+      // the colours it cycles through, the current one ringed
+      const k = b.cycle.length, cur = G.arrivals % k;
+      for (let i = 0; i < k; i++) {
+        const cx = -L / 2 + 8 + i * 8.5;
+        ctx.fillStyle = COLORS[b.cycle[i]].c; ctx.strokeStyle = i === cur ? '#fff' : 'rgba(15,23,42,0.5)'; ctx.lineWidth = i === cur ? 1.8 : 1;
+        ctx.beginPath(); ctx.arc(cx, W / 2 - 4, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    }
+    if (b.windmill && mode === 'arrow') {
+      // a little windmill on the back of the roof, sails turning
+      const cx = -L / 2 + 9, cy = -W / 2 + 6;
+      ctx.save(); ctx.translate(cx, cy);
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(15,23,42,0.5)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.rotate(clock * 3);
+      ctx.fillStyle = '#0f766e';
+      for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(1.6, -5); ctx.lineTo(-1.2, -5); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    }
+    if (b.tow && mode === 'arrow') {
+      // a little tow truck hitched over the front, with its amber beacon
+      const fx = L / 2 - 12;
+      ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(fx - 5, 0); ctx.lineTo(fx + 1, 0); ctx.stroke();
+      ctx.fillStyle = '#f59e0b'; ctx.strokeStyle = '#78350f'; ctx.lineWidth = 1;
+      rr(fx, -W / 2 + 0.5, 12, W - 1, 3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(30,58,95,0.85)'; ctx.fillRect(fx + 8, -W / 2 + 3, 2.2, W - 6);
+      ctx.fillStyle = `rgba(254,215,170,${0.6 + 0.4 * Math.sin(clock * 9)})`;
+      ctx.beginPath(); ctx.arc(fx + 4, 0, 2, 0, Math.PI * 2); ctx.fill();
     }
     if (b.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${b.flash * 2})`;
@@ -1555,6 +1649,129 @@
     }
   }
 
+  // The RV squatter. It counts departures while it circles the road; at zero
+  // it waits for a free bay and takes it at once, stays for its number of
+  // departures, then drives off and the count starts again.
+  const RV_SPOT = { rv: true };
+  function updateRV(dt) {
+    const rv = G.rv, R = G.rules?.rv;
+    if (!rv) return;
+    rv.t = Math.min(1, rv.t + dt / 0.6);
+    for (; rv.seen < G.arrivals; rv.seen++) {
+      if (rv.mode === 'road' && --rv.count <= 0) rv.mode = 'waiting';
+      else if (rv.mode === 'parked' && --rv.stay <= 0) {
+        G.slots[rv.slot] = null; rv.from = rv.slot; rv.slot = -1;
+        rv.mode = 'road'; rv.count = R.gap; rv.t = 0;
+      }
+    }
+    if (rv.mode === 'waiting') {
+      const i = freeSlot();
+      if (i > 0) { G.slots[i] = RV_SPOT; rv.slot = i; rv.mode = 'parked'; rv.stay = R.stay; rv.t = 0; rv.fromD = rv.d; }
+    }
+    // it drives round the road, slowing to a crawl along the top while it waits
+    if (rv.mode !== 'parked' && rv.t >= 1) rv.d += dt * (rv.mode === 'waiting' ? 12 : 55);
+  }
+  function rvRoadPose(d) {
+    const { x0, x1, y0, y1 } = road, w = x1 - x0, h = y1 - y0, P = 2 * (w + h);
+    d = ((d % P) + P) % P;
+    if (d < w) return { x: x0 + d, y: y0, ang: 0 };
+    if (d < w + h) return { x: x1, y: y0 + d - w, ang: Math.PI / 2 };
+    if (d < 2 * w + h) return { x: x1 - (d - w - h), y: y1, ang: Math.PI };
+    return { x: x0, y: y1 - (d - 2 * w - h), ang: -Math.PI / 2 };
+  }
+  function drawRVBody(pose) {
+    ctx.save(); ctx.translate(pose.x, pose.y); ctx.rotate(pose.ang); ctx.scale(pose.s, pose.s);
+    const L = 46, W = 21;
+    ctx.fillStyle = 'rgba(15,23,42,0.22)'; rr(-L / 2 + 1.5, -W / 2 + 3, L, W, 6); ctx.fill();
+    ctx.fillStyle = '#c9b48a'; rr(-L / 2, -W / 2, L, W, 6); ctx.fill();
+    ctx.fillStyle = '#fbf6ea'; rr(-L / 2 + 1.3, -W / 2 + 1.3, L - 2.6, W - 2.6, 5); ctx.fill();
+    ctx.fillStyle = '#d97706'; ctx.fillRect(-L / 2 + 3, -W / 2 + 1.3, L - 12, 3); ctx.fillRect(-L / 2 + 3, W / 2 - 4.3, L - 12, 3);
+    ctx.fillStyle = '#7dd3fc'; rr(L / 2 - 8, -W / 2 + 3, 5.5, W - 6, 2); ctx.fill();      // windscreen
+    ctx.fillStyle = '#e7dcc4'; rr(-L / 2 + 6, -5, 14, 10, 2); ctx.fill();                    // roof hatch
+    ctx.fillStyle = '#475569'; ctx.fillRect(-L / 2 - 2.5, -6, 2.5, 12);                       // spare wheel rack
+    ctx.restore();
+  }
+  function drawRV() {
+    const rv = G.rv;
+    if (!rv) return;
+    let pose;
+    const roadPose = rvRoadPose(rv.d), rs = Math.min(ls, 0.85);
+    if (rv.mode === 'parked') {
+      const bay = slotPose(rv.slot), from = rvRoadPose(rv.fromD ?? rv.d), t = easeInOut(rv.t);
+      pose = { x: lerp(from.x, bay.x, t), y: lerp(from.y, bay.y, t), ang: t < 1 ? -Math.PI / 2 : bay.ang, s: lerp(rs, slotScale, t) };
+    } else if (rv.t < 1 && rv.from != null) {
+      const bay = slotPose(rv.from), t = easeInOut(rv.t);
+      pose = { x: lerp(bay.x, roadPose.x, t), y: lerp(bay.y, roadPose.y, t), ang: Math.PI / 2, s: lerp(slotScale, rs, t) };
+    } else pose = { ...roadPose, s: rs };
+    drawRVBody(pose);
+    // counter: departures until it squats, or until it leaves the bay
+    const n = rv.mode === 'parked' ? rv.stay : rv.mode === 'waiting' ? '!' : rv.count;
+    const bx = pose.x + 10, by = pose.y - 12, warn = rv.mode !== 'road';
+    ctx.fillStyle = warn ? '#dc2626' : '#d97706';
+    ctx.beginPath(); ctx.arc(bx, by, 8.5 + (rv.mode === 'waiting' ? Math.sin(clock * 8) : 0), 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = '900 11px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(n), bx, by + 0.5);
+  }
+
+  // A steel turntable under the bus, with a quarter-turn arrow
+  function drawTurntable(b) {
+    const x = lotX + b.x * ls, y = lotY + b.y * ls, r = (b.len / 2 + 2) * ls;
+    ctx.save();
+    ctx.fillStyle = '#64748b'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = 'rgba(226,232,240,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(x, y, r - 4 * ls, 0, Math.PI * 2); ctx.stroke();
+    // clockwise arrow round the rim
+    const a0 = -Math.PI * 0.95, a1 = -Math.PI * 0.6;
+    ctx.strokeStyle = '#fde047'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y, r - 2 * ls, a0, a1); ctx.stroke();
+    const hx = x + Math.cos(a1) * (r - 2 * ls), hy = y + Math.sin(a1) * (r - 2 * ls);
+    ctx.fillStyle = '#fde047'; ctx.beginPath();
+    ctx.moveTo(hx + Math.cos(a1 + Math.PI / 2) * 5, hy + Math.sin(a1 + Math.PI / 2) * 5);
+    ctx.lineTo(hx + Math.cos(a1) * 4, hy + Math.sin(a1) * 4); ctx.lineTo(hx - Math.cos(a1) * 4, hy - Math.sin(a1) * 4); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // Fog over its band of the lot (out to the asphalt's edge where the band
+  // touches the lot's edge) and over every bus that reaches into it. It
+  // drifts gently, shows how many windmill buses are left, and fades once
+  // they have all gone.
+  function drawFog() {
+    const F = G.fog;
+    if (!F || F.fade <= 0) return;
+    const X = (x) => lotX + x * ls, Y = (y) => lotY + y * ls, A_ = asphalt;
+    const x0 = F.x0 <= 0 ? A_.x : X(F.x0), x1 = F.x1 >= LW ? A_.x + A_.w : X(F.x1);
+    const y0 = F.y0 <= 0 ? A_.y : Y(F.y0), y1 = F.y1 >= LH ? A_.y + A_.h : Y(F.y1);
+    ctx.save(); ctx.globalAlpha = F.fade;
+    ctx.beginPath(); ctx.rect(A_.x, A_.y, A_.w, A_.h); ctx.clip();
+    ctx.fillStyle = 'rgba(226,232,240,0.95)';
+    rr(x0, y0, x1 - x0, y1 - y0, 18); ctx.fill();
+    for (const b of G.buses) if (b.state === 'lot' && b.inFog) {
+      ctx.save(); ctx.translate(X(b.x), Y(b.y)); ctx.rotate(b.ang);
+      rr((-b.len / 2 - 4) * ls, (-b.wid / 2 - 4) * ls, (b.len + 8) * ls, (b.wid + 8) * ls, 10 * ls); ctx.fill();
+      ctx.restore();
+    }
+    // soft billows drifting over it
+    ctx.fillStyle = 'rgba(248,250,252,0.7)';
+    const w = x1 - x0, h = y1 - y0, n = Math.max(5, Math.round((w + h) / 45));
+    for (let i = 0; i < n; i++) {
+      const u = (i * 0.618 + 0.3) % 1, v = (i * 0.371 + 0.2) % 1, drift = Math.sin(clock * 0.5 + i * 1.7) * 8;
+      ctx.beginPath(); ctx.arc(x0 + u * w + drift, y0 + v * h, 16 + (i % 3) * 8, 0, Math.PI * 2); ctx.fill();
+    }
+    // windmill buses still to go
+    const left = lotBuses().filter((b) => b.windmill).length;
+    if (left && !F.lifted) {
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      ctx.fillStyle = 'rgba(15,118,110,0.9)'; rr(cx - 26, cy - 13, 52, 26, 13); ctx.fill();
+      ctx.save(); ctx.translate(cx - 11, cy); ctx.rotate(clock * 3); ctx.fillStyle = '#fff';
+      for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(2.2, -8); ctx.lineTo(-1.6, -8); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+      ctx.fillStyle = '#fff'; ctx.font = '900 14px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`×${left}`, cx + 9, cy + 1);
+    }
+    ctx.restore();
+  }
+
   function drawAdvanced() {
     if (!G.rules) return;
     const r = G.rules;
@@ -1698,6 +1915,7 @@
     }
 
     // Buses: parked first, moving ones on top
+    for (const b of G.buses) if (b.state === 'lot' && b.turntable) drawTurntable(b);
     for (const b of G.buses) if (b.state === 'lot') {
       const pose = lotPose(b);
       drawBus(b, pose, 'arrow');
@@ -1708,6 +1926,7 @@
         ctx.restore();
       }
     }
+    drawFog();
     drawLinkedHighlights();
     drawParade();
     drawChuteGates();
@@ -1716,6 +1935,7 @@
     for (const b of G.buses) {
       if (b.state === 'slot' || b.state === 'leaving') drawBus(b, poseOf(b), 'seats');
     }
+    drawRV();
     for (const b of G.buses) {
       if (b.state === 'exiting' || b.state === 'driving' || b.state === 'flying' || b.state === 'transferring') drawBus(b, poseOf(b), (b.state === 'flying' && b.t > 0.5) || (b.state === 'driving' && b.dist > b.route[b.route.length - 2].d) ? 'seats' : 'arrow');
     }
@@ -1819,12 +2039,12 @@
       for (const b of G.buses) {
         if (['slot', 'flying', 'driving', 'exiting'].includes(b.state)) { const load = A.loading(b); need[load.color] = (need[load.color] || 0) + load.left; }
       }
-      for (const c of G.ring) if (c !== null && need[c] > 0) need[c]--;
+      for (const c of G.ring) if (c !== null && need[colorOf(c)] > 0) need[colorOf(c)] -= seatsOf(c);
       const reorder = queue => {
         const win = queue.slice(0, 240), front = [], rest = [], unit = G.rules ? 1 : LANES;
         for (let i = 0; i < win.length; i += unit) {
-          const group = win.slice(i, i + unit), color = group[0];
-          if (need[color] >= group.length) { front.push(...group); need[color] -= group.length; } else rest.push(...group);
+          const group = win.slice(i, i + unit), color = colorOf(group[0]), seats = group.reduce((a, c) => a + seatsOf(c), 0);
+          if (need[color] >= seats) { front.push(...group); need[color] -= seats; } else rest.push(...group);
         }
         return front.concat(rest, queue.slice(240));
       };
@@ -2049,5 +2269,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for testing
-  window.__bus = { genLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
+  window.__bus = { genLevel, initLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
 })();
