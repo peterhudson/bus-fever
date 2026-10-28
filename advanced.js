@@ -13,7 +13,18 @@
     ['alternating', 'Alternating chutes', 'Steel gates slide outward to let passengers through, then close across the chute to hold them back. Counters below and outside the chutes show departures until they switch. An empty chute yields to the other one.'],
     ['transfers', 'Transfer tunnels', 'A T-marked bus first travels through tunnel T and returns at the matching outlined space, turned to the shown direction. This takes one departure, but no bay. Tap it again to send it to the station.'],
     ['singles', 'Four-colour rows', 'Rows can contain four different colours. Plan for individual passengers and partially filled buses.'],
+    ['squatter', 'RV squatter', 'A tourist RV circles the road. When its counter reaches zero it parks in a free bay, or waits for the next bay to empty and takes it at once. It stays for the shown number of departures, then drives off and comes back later.'],
+    ['fog', 'Fog and windmills', 'Fog hides part of the lot. Buses under it can’t leave until every windmill bus has left the lot and the wind blows the fog away.'],
+    ['luggage', 'Luggage', 'Passengers towing a silver suitcase take two seats. A bus with one seat left can’t take them.'],
+    ['chameleon', 'Chameleon buses', 'These buses change colour each time a bus leaves, cycling through the dots on their side (the ringed dot is the current colour). They keep the colour they have when they leave the lot.'],
+    ['turntables', 'Turntables', 'A bus on a turntable turns a quarter turn clockwise each time another bus leaves the lot.'],
+    ['towing', 'Tow trucks', 'A bus with a tow truck hitched to its front is pulled forward into any gap that opens ahead of it whenever a bus leaves the lot.'],
   ];
+  // Rules that move buses or change which exit a bus uses don't mix with
+  // rules that depend on exits, or with fog
+  const movers = ['turntables', 'towing'], exitRules = ['road', 'caravan', 'switches', 'transfers', 'linked'];
+  const clash = (a, b) => (movers.includes(a) && (exitRules.includes(b) || b === 'fog')) || (movers.includes(b) && (exitRules.includes(a) || a === 'fog')) ||
+    (a === 'fog' && b === 'transfers') || (b === 'fog' && a === 'transfers');
   // Each chapter brings one new rule, ten levels apart. Its first level is a
   // trivial tutorial with only the new rule. The second plays at about half the
   // difficulty of its level number (the board of level n/2). From the third on
@@ -21,20 +32,27 @@
   // the new rule and up to two rules from earlier chapters.
   function profile(n) {
     if (n <= 100) return null;
-    const chapter = Math.min(9, Math.floor((n - 101) / 10)), lesson = (n - 101) % 10;
-    const stage = n > 200 ? 'full' : lesson === 0 ? 'tutorial' : lesson === 1 ? 'half' : 'full';
-    const keys = n <= 200 ? [chapters[chapter][0]] : [
-      ['road', 'pairs', 'linked'], ['caravan', 'stages', 'trios'], ['switches', 'linked', 'singles'],
-      ['alternating', 'pairs', 'stages'], ['transfers', 'switches', 'trios'],
-      ['caravan', 'linked', 'transfers'], ['alternating', 'singles', 'linked'],
-      ['road', 'stages', 'transfers'], ['switches', 'alternating', 'singles'],
-      ['caravan', 'switches', 'linked', 'stages', 'alternating', 'transfers', 'singles'],
-    ][(n - 201) % 10].slice();
-    if (n <= 200 && stage === 'full') {
-      const earlier = chapters.slice(0, chapter).map(c => c[0]);
-      let seed = (n * 2654435761) >>> 0;
-      const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
-      for (let k = Math.min(2, earlier.length); k > 0; k--) keys.push(earlier.splice(Math.floor(rnd() * earlier.length), 1)[0]);
+    const last = 101 + chapters.length * 10;   // first level after the chapters
+    const chapter = Math.min(chapters.length - 1, Math.floor((n - 101) / 10)), lesson = (n - 101) % 10;
+    const stage = n >= last ? 'full' : lesson === 0 ? 'tutorial' : lesson === 1 ? 'half' : 'full';
+    let seed = (n * 2654435761) >>> 0;
+    const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+    // Add rules picked at random from a pool, skipping any that clash
+    const add = (keys, pool, count) => {
+      pool = pool.slice();
+      while (count > 0 && pool.length) {
+        const k = pool.splice(Math.floor(rnd() * pool.length), 1)[0];
+        if (keys.some(o => clash(o, k))) continue;
+        keys.push(k); count--;
+      }
+      return keys;
+    };
+    const all = chapters.map(c => c[0]);
+    let keys;
+    if (n >= last) keys = add([], all, n % 10 === 0 ? 5 : 3);   // after the chapters: mixes of any rules
+    else {
+      keys = [chapters[chapter][0]];
+      if (stage === 'full') add(keys, all.slice(0, chapter), 2);
     }
     const p = Object.fromEntries(keys.map(k => [k, true]));
     p.mix = p.singles ? 1 : p.trios ? 3 : p.pairs ? 2 : 4;
@@ -43,6 +61,7 @@
     // the older generator's level to build the board at; 0 = tutorial board
     p.level = stage === 'tutorial' ? 0 : stage === 'half' ? Math.round(n / 2) : n;
     p.target = 12; p.colors = 3;   // tutorial board
+    p.luggageShare = p.teaching ? 0.35 : 0.25;
     // Alternating chutes switch every 2 departures in the tutorial, then
     // every 1 to 4, changing from level to level
     p.switchEvery = p.teaching ? 2 : 1 + ((n * 7 + 3) % 4);
@@ -238,10 +257,99 @@
       const pick = options[Math.floor(rng() * options.length)];
       pick.pad.switchPad = true; rules.switches = { zones: pick.zones };
     }
-    // Four active buses at most. A linked pair is never split across batches.
-    const queue = [];
+    // From here on the order is fixed. moveAt(i) is how many departures
+    // (transfers included) come before order[i].
+    const moveAt = i => trace.find(t => t.bus.seq === order[i].seq || t.bus === order[i])?.moves ?? i;
+    const fixed = L.tunnels || [];
+    // Play the order with turntables turning and tow trucks pulling. Every
+    // departing bus needs a clear way out and nothing may end up overlapping.
+    const playable = () => {
+      const lot = order.map(b => ({ ...b, ref: b }));
+      for (const o of lot) if ((o.turntable && fixed.concat(lot).some(q => q !== o && obbOverlap(o, q)))) return false;
+      for (let i = 0; i < order.length; i++) {
+        const o = lot.find(q => q.ref === order[i]);
+        if (pathHit(o, lot.concat(fixed))) return false;
+        lot.splice(lot.indexOf(o), 1);
+        for (const q of lot) if (q.turntable) {
+          q.ang += Math.PI / 2;
+          if (fixed.concat(lot).some(r => r !== q && obbOverlap(q, r))) return false;
+        }
+        api.towStep(lot, fixed);
+      }
+      return true;
+    };
+    const shuffled = list => { const out = list.slice(); for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; } return out; };
+    if (p.turntables) {
+      // Wind each turntable bus back by a quarter turn for every bus that
+      // leaves before it, so it faces its planned way out when its turn comes
+      let placed = 0;
+      for (const i of shuffled(order.map((_, i) => i).filter(i => i >= 2))) {
+        const b = order[i];
+        if (b.ice || b.flip) continue;
+        const was = b.ang;
+        b.ang = was - i * Math.PI / 2; b.turntable = true;
+        if (playable()) { if (++placed === (p.teaching ? 1 : 2)) break; continue; }
+        b.ang = was; b.turntable = false;
+      }
+      if (!placed) return null;
+    }
+    if (p.towing) {
+      let placed = 0;
+      for (const i of shuffled(order.map((_, i) => i).filter(i => i >= 1))) {
+        const b = order[i];
+        if (!pathHit(b, order.concat(fixed))) continue;     // nothing ahead to close up on
+        b.tow = true;
+        if (playable()) { if (++placed === (p.teaching ? 1 : 2)) break; continue; }
+        b.tow = false;
+      }
+      if (!placed) return null;
+    }
+    if (p.fog) {
+      // Fog covers a band of the lot whose buses all leave late. The windmill
+      // buses leave before any of them, the last one just before.
+      const bands = [];
+      for (const f of [0.34, 0.45, 0.55]) bands.push({ x0: 0, y0: 0, x1: 330, y1: 290 * f }, { x0: 0, y0: 290 * (1 - f), x1: 330, y1: 290 },
+        { x0: 0, y0: 0, x1: 330 * f, y1: 290 }, { x0: 330 * (1 - f), y0: 0, x1: 330, y1: 290 });
+      // a bus is under the fog if any part of it is in the band
+      const inBand = (z, b) => api.corners(b.x, b.y, b.ang, b.len, b.wid).some(([x, y]) => x > z.x0 && x < z.x1 && y > z.y0 && y < z.y1) ||
+        (b.x > z.x0 && b.x < z.x1 && b.y > z.y0 && b.y < z.y1);
+      const options = bands.map(z => {
+        const fogged = order.filter(b => inBand(z, b)), first = order.findIndex(b => inBand(z, b));
+        return { z, count: fogged.length, first };
+      }).filter(o => o.count >= (p.teaching ? 2 : 3) && o.first >= 2 && o.count <= order.length * 0.6);
+      if (!options.length) return null;
+      const pick = options[Math.floor(rng() * options.length)];
+      const windmills = [order[pick.first - 1]];
+      if (!p.teaching && pick.first >= 3) windmills.push(order[Math.floor(rng() * (pick.first - 1))]);
+      else if (pick.first >= 2) windmills.push(order[pick.first - 2]);
+      windmills.forEach(b => { b.windmill = true; });
+      order.forEach(b => { if (inBand(pick.z, b)) b.inFog = true; });
+      rules.fog = pick.z;
+    }
+    if (p.chameleon) {
+      // A chameleon cycles through two or three colours, one step for every
+      // departure, and keeps the colour it has when it leaves
+      const picks = shuffled(order.map((_, i) => i).filter(i => i >= 1 && !order[i].link && !order[i].transfer && !order[i].stages)).slice(0, p.teaching ? 1 : 3);
+      if (!picks.length) return null;
+      for (const i of picks) {
+        // b.color stays the colour it leaves with; cycle[t % k] is its colour
+        // after t departures
+        const b = order[i], k = p.teaching ? 2 : 2 + Math.floor(rng() * 2), at = moveAt(i) % k;
+        const others = shuffled(Array.from({ length: p.colors }, (_, c) => c).filter(c => c !== b.color)).slice(0, k - 1);
+        b.cycle = others.slice(0, at).concat([b.color], others.slice(at));
+        b.mystery = false;
+      }
+    }
+    if (p.squatter) {
+      const r = k => Math.floor(rng() * k);
+      rules.rv = p.teaching ? { first: 3, stay: 2, gap: 4 } : { first: 2 + r(3), stay: 2 + r(3), gap: 3 + r(4) };
+    }
+    // Four active buses at most (three when an RV can take a bay). A linked
+    // pair is never split across batches. Some passengers carry a suitcase
+    // (BAG added to their color) and take two seats.
+    const queue = [], batch = p.squatter ? 3 : 4, BAG = 16;
     for (let offset = 0; offset < order.length;) {
-      let end = Math.min(order.length, offset + 4);
+      let end = Math.min(order.length, offset + batch);
       if (end < order.length && order[end - 1].link && order[end - 1].link === order[end].link) end--;
       const active = order.slice(offset, end).map(b => stages(b).map(s => ({ ...s })));
       let rowPosition = 0, previous = -1;
@@ -251,9 +359,12 @@
         const pool = different.length ? different : choices;
         const chosen = pool[Math.floor(rng() * pool.length)], stage = active[chosen][0];
         const unit = p.mix === 4 ? 4 : p.mix === 2 ? 2 : p.mix === 3 && rowPosition % 4 === 0 ? 2 : 1;
-        const count = Math.min(unit, stage.count);
-        for (let j = 0; j < count; j++) queue.push(stage.color);
-        stage.count -= count; rowPosition += count; previous = stage.color;
+        for (let j = 0; j < unit && stage.count > 0; j++) {
+          const bag = p.luggage && stage.count >= 2 && rng() < p.luggageShare;
+          queue.push(stage.color + (bag ? BAG : 0));
+          stage.count -= bag ? 2 : 1; rowPosition++;
+        }
+        previous = stage.color;
         if (!stage.count) active[chosen].shift();
       }
       offset = end;
