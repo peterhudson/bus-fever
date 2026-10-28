@@ -58,6 +58,10 @@
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {}
   }
   let save = loadSave();
+  // Opening the game once with ?playtest adds a level picker to the menu on
+  // that device, for trying each chapter's first levels without losing the
+  // level you're up to
+  if (typeof location !== 'undefined' && /[?&]playtest\b/.test(location.search)) { save.playtest = true; persist(); }
 
   // ---------- Math helpers ----------
   function mulberry32(a) {
@@ -2221,12 +2225,37 @@
       <button class="btn" data-a="close">Resume</button>
       <button class="btn blue" data-a="how">How to play</button>
       ${G.rules ? '<button class="btn blue" data-a="rules">This level’s rules</button>' : ''}
+      ${save.playtest ? '<button class="btn blue" data-a="playtest">Playtest levels</button>' : ''}
       <button class="btn gray" data-a="sound">Sound: ${save.sound ? 'On' : 'Off'}</button>`;
     showModal(render(), {
       sound: () => { save.sound = !save.sound; persist(); $('#card').innerHTML = render(); },
       rules: () => { $('#card').innerHTML = '<h2>This level’s rules</h2><ul class="howto">' + A.chapters.filter(([key]) => G.rules.profile[key]).map(([, name, explanation]) => `<li><b>${name}</b> ${explanation}</li>`).join('') + '</ul><button class="btn" data-a="close">Resume</button>'; },
       how: () => { $('#card').innerHTML = howToHtml() + '<button class="btn" data-a="close">Got it</button>'; },
+      playtest: () => { $('#card').innerHTML = playtestHtml(); },
+      pick: (btn) => playtestLevel(Number(btn.dataset.level)),
+      back: () => playtestLevel(save.realLevel, true),
     });
+  }
+  // Each chapter's tutorial, half-difficulty and first full level
+  function playtestHtml() {
+    const rows = A.chapters.map(([key, name], i) => {
+      const n = 101 + i * 10;
+      return `<div class="pt-row"><span>${name}</span>${[n, n + 1, n + 2].map((l) => `<button class="pt-level" data-a="pick" data-level="${l}">${l}</button>`).join('')}</div>`;
+    }).join('');
+    return `<h2>Playtest levels</h2><p class="pt-note">Each new rule: its tutorial, the half-difficulty level, then full difficulty. Intros show again.</p>
+      <div class="pt-list">${rows}</div>
+      ${save.realLevel ? `<button class="btn" data-a="back">Back to my level ${save.realLevel}</button>` : ''}
+      <button class="btn gray" data-a="close">Close</button>`;
+  }
+  function playtestLevel(n, back = false) {
+    if (back) delete save.realLevel;
+    else {
+      if (!save.realLevel) save.realLevel = save.level;
+      // show the chapter's intro again on its first level
+      const chapter = A.chapters[(n - 101) / 10];
+      if (chapter && save.seenPieces) delete save.seenPieces[chapter[0]];
+    }
+    save.level = n; persist(); closeModal(); startLevel();
   }
 
   // ---------- Sound ----------
