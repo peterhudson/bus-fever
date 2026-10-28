@@ -43,6 +43,9 @@
     // the older generator's level to build the board at; 0 = tutorial board
     p.level = stage === 'tutorial' ? 0 : stage === 'half' ? Math.round(n / 2) : n;
     p.target = 12; p.colors = 3;   // tutorial board
+    // Alternating chutes switch every 2 departures in the tutorial, then
+    // every 1 to 4, changing from level to level
+    p.switchEvery = p.teaching ? 2 : 1 + ((n * 7 + 3) % 4);
     p.paradeCount = p.teaching ? 3 : Math.min(12, 4 + Math.floor(Math.max(0, n - 121) / 30));
     return p;
   }
@@ -153,7 +156,7 @@
   function decorate(L, p, rng, api) {
     let order = L.buses.slice().sort((a, b) => a.seq - b.seq);
     const { pathHit, obbOverlap } = api;
-    const rules = { profile: p, switchEvery: p.alternating ? 2 : 0 };
+    const rules = { profile: p, switchEvery: p.alternating ? p.switchEvery : 0 };
     if (p.stages) {
       order.filter((_, i) => i % 6 === 2).forEach(b => {
         b.mystery = false;
