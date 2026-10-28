@@ -252,14 +252,16 @@
   // move sends a bus through each empty cell, and only put a gate where it is
   // open at every one of those moves, so the winning order still works.
   const gateOpen = (t, moves) => Math.floor((moves + t.phase) / t.gate) % 2 === 1;
-  function placeGates(buses, tunnels, order, count, rng) {
-    const cells = buses.free.map(([x, y]) => ({ x, y, ang: 0, len: 10, wid: 10, hits: [], dirs: [] }));
+  // Where each bus in the winning order is, and how many moves have been
+  // made, when its turn comes
+  function orderTrace(buses, tunnels, order) {
     const lot = buses.map((b) => ({ ...b, ref: b }));
     const tq = tunnels.map((t) => t.queue.slice());
+    const trace = [];
     for (let i = 0; i < order.length; i++) {
       const b = lot.find((o) => o.ref === order[i]);
-      if (!b) return;
-      for (const c of cells) if (pathHit(b, [c])) { c.hits.push(i); c.dirs.push(b.ang); }
+      if (!b) return null;
+      trace.push({ bus: { ...b }, moves: i });
       lot.splice(lot.indexOf(b), 1);
       for (const o of lot) if (o.flip) o.ang += Math.PI;
       tunnels.forEach((t, k) => {
@@ -270,6 +272,42 @@
         lot.push({ ...m, flip: spec.flip, ref: spec });
       });
     }
+    return trace;
+  }
+  // The same for a solution plan after level 100, where linked buses leave
+  // together and a transfer is a move that keeps the bus in the lot
+  function planTrace(L) {
+    const lot = L.buses.map((b) => ({ ...b, ref: b }));
+    const trace = [];
+    let moves = 0, sent = 0;   // sent: buses gone to a bay, which is what ice and bombs count
+    for (const a of L.solution) {
+      const group = a.ids.map((id) => lot.find((o) => o.ref.seq === id));
+      if (group.some((o) => !o)) return null;
+      for (const o of group) trace.push({ bus: { ...o }, ref: o.ref, moves, sent, transfer: !!a.transfer });
+      if (a.transfer) { Object.assign(group[0], group[0].ref.transfer); moves++; continue; }
+      for (const o of group) lot.splice(lot.indexOf(o), 1);
+      for (let k = 0; k < group.length; k++) for (const o of lot) if (o.flip) o.ang += Math.PI;
+      moves += group.length; sent += group.length;
+    }
+    return trace;
+  }
+  // The chapter planner may reorder departures (to dodge a parade), so fit
+  // ice, bombs and locks to the order it settled on
+  function fitPiecesToPlan(L, trace) {
+    const before = [];
+    for (const t of trace) {
+      if (t.transfer) continue;
+      const b = t.ref;
+      if (b.ice) b.ice = Math.min(b.ice, t.sent);
+      if (b.bomb) b.bomb = t.sent + Math.max(1, b.bomb - b.seq);
+      if (b.lock != null && !before.includes(b.lock)) b.lock = null;
+      before.push(b.color);
+    }
+  }
+  function placeGates(free, tunnels, trace, count, rng, avoid = []) {
+    if (!trace) return;
+    const cells = free.map(([x, y]) => ({ x, y, ang: 0, len: 10, wid: 10, hits: [], dirs: [] })).filter((c) => !avoid.some((o) => obbOverlap(c, o)));
+    for (const { bus, moves } of trace) for (const c of cells) if (pathHit(bus, [c])) { c.hits.push(moves); c.dirs.push(bus.ang); }
     // busier cells first, then try the gate sizes in a random order
     const cand = cells.filter((c) => c.hits.length).sort((a, c) => c.hits.length - a.hits.length + (rng() - 0.5) * 2);
     let placed = 0;
@@ -323,10 +361,30 @@
   function genLevel(n, firstAttempt = 0) {
     const advanced = A.profile(n);
     if (advanced) {
+      // The tutorial is a small board with only the new rule. Other levels use
+      // the older generator at the chapter's difficulty (half or full) with
+      // every older piece, except tunnels, whose buses the chapter planner
+      // doesn't route. Flip buses would change which exit a bus uses, so they
+      // stay off when a rule depends on exits. Alternating chutes cap colours
+      // at 8, since with 10 the verified plan too often depends on frame rate.
+      const lvl = advanced.level, f = lvl ? levelFeatures(lvl) : null;
+      const exits = ['road', 'caravan', 'switches', 'transfers', 'linked'].some((k) => advanced[k]);
+      const features = f
+        ? { ...f, level: lvl, tunnels: 0, gates: 0, flips: exits ? 0 : f.flips, colors: Math.min(2 + Math.floor((lvl + 2) / 3), advanced.alternating ? 8 : COLORS.length) }
+        : { mystery: 0, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0, gates: 0, target: advanced.target, colors: advanced.colors };
+      const p = { ...advanced, colors: features.colors };
       for (let attempt = firstAttempt; attempt < firstAttempt + 160; attempt++) {
-        const features = { mystery: advanced.teaching ? 0 : 0.15, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0, gates: 0, target: advanced.target, colors: advanced.colors };
         const L = buildLevel(n, attempt, features);
-        if (L && A.decorate(L, advanced, mulberry32(n * 997 + attempt * 31), { pathHit, obbOverlap, corners, roadGeometry })) return L;
+        if (!L || !A.decorate(L, p, mulberry32(n * 997 + attempt * 31), { pathHit, obbOverlap, corners, roadGeometry })) continue;
+        const trace = planTrace(L);
+        if (!trace) continue;
+        fitPiecesToPlan(L, trace);
+        if (f && f.gates && L.buses.free) {
+          const landing = L.buses.filter((b) => b.transfer).map((b) => ({ ...b, ...b.transfer }));
+          placeGates(L.buses.free, L.tunnels, trace, f.gates, mulberry32(n * 31 + attempt), landing);
+        }
+        L.ringLevel = lvl || 20;
+        return L;
       }
       throw new Error('Could not construct the advanced level');
     }
@@ -337,9 +395,12 @@
     return buildLevel(n, 0, { mystery: 0, flips: 0, tunnels: 0, shape: null, ice: 0, bombs: 0, locks: 0, cones: 0, gates: 0 });
   }
 
-  function buildLevel(n, attempt, feats) {
-    const rng = mulberry32(n * 7919 + 13 + attempt * 104729);
+  // feats.level, when given, is the level whose difficulty to build at; the
+  // level number n still picks the random seed
+  function buildLevel(seedN, attempt, feats) {
+    const rng = mulberry32(seedN * 7919 + 13 + attempt * 104729);
     const ri = (k) => Math.floor(rng() * k);
+    const n = feats.level || seedN;
     const packed = n > 4;
     const target = feats.target || (packed ? Math.min(8 + n, 50 + Math.round(14 * late(n))) : 5 + Math.floor(n * 1.15));
     const nc = feats.colors || Math.min(2 + Math.floor((n + 2) / 3), COLORS.length, target);
@@ -413,7 +474,7 @@
       }
     });
 
-    if (feats.gates && buses.free) placeGates(buses, tunnels, order, feats.gates, rng);
+    if (feats.gates && buses.free) placeGates(buses.free, tunnels, orderTrace(buses, tunnels, order), feats.gates, rng);
 
     // Passenger line
     const K = n < 6 ? 2 : n < 15 ? 3 : 4;
@@ -638,7 +699,7 @@
       queue: L.queue.slice(), total: L.queue.length,
       slots: new Array(8).fill(null), tempBays: 0, arrivals: 0,
       shift: 0, feedShift: [0, 0], boardT: 0, particles: [], vipMode: false,
-      ring: new Array(ringSeats(save.level)).fill(null), ringOff: 0, enter: {},
+      ring: new Array(ringSeats(L.ringLevel || save.level)).fill(null), ringOff: 0, enter: {},
       modal: false, won: false, stuckT: 0, checkT: 0, failDismissed: false,
       rules: L.rules ? { ...L.rules, caravan: L.rules.caravan ? { ...L.rules.caravan, bounds:{...L.rules.caravan.bounds} } : undefined } : undefined, solution: L.solution, switched: false,
       paradeMoves:0, paradeFrom:0, paradeT:0, linkFocus:null, linkFocusT:0, chuteSlide:[0,0],

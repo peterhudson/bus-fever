@@ -29,7 +29,7 @@ Special pieces show up as you go:
 - **Gates (from level 70)** sit in the lot like cones but open and close as buses leave. An N-gate is shut for N moves, then open for N moves. The badge counts the moves until it changes. Gates only go where the winning order finds them open.
 - **HARD levels (every 10th level)** have a smaller carousel and pay double coins. Through level 100, they also pack buses into shapes such as a ring, plus, diamond or L.
 
-After level 100, new chapters focus on the new rules, with mystery buses returning after each introduction. The first three levels of each chapter use fewer buses and colours; later lessons combine it with the previous chapter. From level 201, the rules appear in increasingly crowded combinations.
+After level 100, a new rule arrives every 10 levels. The first level of each chapter is a small tutorial with only the new rule. The second plays at about half difficulty: the board of half its level number, plus the new rule. From the third level on, the board is back at full level-100 difficulty, with every older piece except tunnels, plus the new rule and up to two rules from earlier chapters. Flip buses stay off when a rule depends on which exit a bus uses. From level 201, the rules appear in combinations at full difficulty.
 
 | Starts at | New challenge |
 | --- | --- |
