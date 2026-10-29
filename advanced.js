@@ -177,8 +177,10 @@
     const { pathHit, obbOverlap } = api;
     const rules = { profile: p, switchEvery: p.alternating ? p.switchEvery : 0 };
     if (p.stages) {
+      // A bomb would hide the two colours on the roof, so a two-stage bus
+      // never carries one
       order.filter((_, i) => i % 6 === 2).forEach(b => {
-        b.mystery = false;
+        b.mystery = false; delete b.bomb;
         b.stages = [{ color: b.color, count: b.cap / 2 }, { color: (b.color + 1 + Math.floor(rng() * (p.colors - 1))) % p.colors, count: b.cap / 2 }];
       });
     }
@@ -329,7 +331,7 @@
     if (p.chameleon) {
       // A chameleon cycles through two or three colours, one step for every
       // departure, and keeps the colour it has when it leaves
-      const picks = shuffled(order.map((_, i) => i).filter(i => i >= 1 && !order[i].link && !order[i].transfer && !order[i].stages)).slice(0, p.teaching ? 1 : 3);
+      const picks = shuffled(order.map((_, i) => i).filter(i => i >= 1 && !order[i].link && !order[i].transfer && !order[i].stages && !order[i].bomb)).slice(0, p.teaching ? 1 : 3);
       if (!picks.length) return null;
       for (const i of picks) {
         // b.color stays the colour it leaves with; cycle[t % k] is its colour
