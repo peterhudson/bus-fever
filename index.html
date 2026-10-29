@@ -61,7 +61,7 @@
     font: 800 9px -apple-system, sans-serif; cursor: pointer;
   }
   .scene-button .ic { font-size: 23px; line-height: 26px; }
-  .scene-button > span:last-child { font-size: 8px; white-space: nowrap; }
+  .scene-button > span:last-child { font-size: 8px; line-height: 1.1; white-space: nowrap; text-align: center; }
   .scene-button:active { transform: translateY(2px); box-shadow: 0 1px 0 #90aac1; }
   .scene-button[aria-expanded="true"], .scene-button.active { background: linear-gradient(#fff3b0, #ffd46d); color: #785118; }
   #btnShop { background: linear-gradient(#fff9df, #ffe3a4); color: #785118; box-shadow: 0 3px 0 #bd9b5f, 0 5px 10px #183c5525; }
@@ -142,12 +142,13 @@
   <div id="playfield">
     <canvas id="game"></canvas>
     <div id="powerDock" class="scene-control">
-      <button id="btnBoosters" class="scene-button" aria-label="Power-ups" aria-expanded="false" aria-controls="powerPanel"><span class="ic" aria-hidden="true">⚡</span><span>Power-ups</span></button>
+      <button id="btnBoosters" class="scene-button" aria-label="Power-ups" aria-expanded="false" aria-controls="powerPanel"><span class="ic" aria-hidden="true">⚡</span><span>Power<br>ups</span></button>
       <div id="powerPanel" class="power-panel" role="group" aria-labelledby="powerTitle" hidden>
         <h2 id="powerTitle">Power-ups</h2>
         <button class="boost" data-k="vip"><span class="ic" aria-hidden="true">⭐</span><span class="labels"><span class="lbl">VIP</span><small>Fly a bus to the VIP bay</small></span><b class="cnt">0</b></button>
         <button class="boost" data-k="shuffle"><span class="ic" aria-hidden="true">🔀</span><span class="labels"><span class="lbl">Shuffle</span><small>Mix up bus colours</small></span><b class="cnt">0</b></button>
         <button class="boost" data-k="sort"><span class="ic" aria-hidden="true">👥</span><span class="labels"><span class="lbl">Sort</span><small>Bring matching riders forward</small></span><b class="cnt">0</b></button>
+        <button class="boost" data-k="undo"><span class="ic" aria-hidden="true">↩️</span><span class="labels"><span class="lbl">Undo</span><small>Take back your last tap</small></span><b class="cnt">0</b></button>
       </div>
     </div>
     <button class="scene-button scene-control" id="btnShop" aria-label="Shop"><span class="ic" aria-hidden="true">🏪</span><span>Shop</span></button>

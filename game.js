@@ -7,7 +7,7 @@
   const BUS_LEN = { 16: 34, 24: 44, 40: 58 };  // seats -> length
   const MAX_BAYS = 7;
   const BAY_PRICES = { 5: 100, 6: 300, 7: 600 };
-  const BOOSTER_PRICE = 50;
+  const BOOSTER_PRICE = 50, UNDO_PRICE = 15;
   const EXTRA_BAY_PRICE = 100;
   const DEFUSE_PRICE = 100;
   const BUMP_DUR = 0.35, FLY_DUR = 0.4, LEAVE_DUR = 0.7, BOARD_GAP = 0.018;
@@ -42,7 +42,7 @@
   const SAVE_KEY = 'sarah-bus-jam-v1';
   const defaultSave = () => ({
     level: 1, coins: 0, bays: 4, sound: true, seenHowTo: false,
-    boosters: { shuffle: 2, sort: 2, vip: 2 },
+    boosters: { shuffle: 2, sort: 2, vip: 2, undo: 3 },
   });
   function loadSave() {
     try {
@@ -730,6 +730,7 @@
       rules: L.rules ? { ...L.rules, caravan: L.rules.caravan ? { ...L.rules.caravan, bounds:{...L.rules.caravan.bounds} } : undefined } : undefined, solution: L.solution, switched: false,
       paradeMoves:0, paradeFrom:0, paradeT:0, linkFocus:null, linkFocusT:0, chuteSlide:[0,0],
       fog: L.rules?.fog ? { ...L.rules.fog, lifted: false, fade: 1 } : null,
+      history: [],    // the game as it was before each tap that moved a bus, for Undo
       rv: L.rules?.rv ? { mode: 'road', count: L.rules.rv.first, stay: 0, slot: -1, seen: 0, d: 0, t: 1 } : null,
       validating, planning, recordedFeeds: [[], []], validationFailed: false,
     };
@@ -1018,7 +1019,10 @@
 
     const b = busAt(px, py);
     if (!b) return;
-    tryDispatch(b, true);
+    const history = G.history; G.history = [];
+    const before = structuredClone(G);
+    G.history = history;
+    if (tryDispatch(b, true)) { history.push(before); if (history.length > 30) history.shift(); }
   });
 
   function tryDispatch(b, notify = true) {
@@ -1986,7 +1990,7 @@
       const k = el.dataset.k, n = save.boosters[k];
       const cnt = el.querySelector('.cnt');
       cnt.textContent = n;
-      el.setAttribute('aria-label', `${k === 'vip' ? 'VIP' : k === 'sort' ? 'Sort' : 'Shuffle'}, ${n} available${k === 'vip' && G.vipMode ? ', selected' : ''}`);
+      el.setAttribute('aria-label', `${k === 'vip' ? 'VIP' : k === 'sort' ? 'Sort' : k === 'undo' ? 'Undo' : 'Shuffle'}, ${n} available${k === 'vip' && G.vipMode ? ', selected' : ''}`);
       cnt.classList.toggle('zero', n <= 0);
       el.classList.toggle('active', k === 'vip' && G && G.vipMode);
     });
@@ -2002,6 +2006,16 @@
     el.classList.toggle('show', !!msg);
     clearTimeout(toastTimer);
     if (msg) toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+  }
+
+  // Undo puts the game back as it was before the last tap that moved a bus
+  function undoMove() {
+    const before = G.history.pop();
+    if (!before) { toast('Nothing to undo yet'); return false; }
+    before.history = G.history;
+    G = before; G.modal = false; G.failDismissed = false; G.stuckT = 0;
+    spendBooster('undo'); sound('magic'); toast('Undone');
+    return true;
   }
 
   function spendBooster(k) {
@@ -2021,6 +2035,7 @@
       updateHUD();
       return;
     }
+    if (k === 'undo') { undoMove(); return; }
     if (k === 'shuffle') {
       const lot = lotBuses();
       const groups = {};
@@ -2143,6 +2158,7 @@
     sound('fail');
     showModal(`<div class="big">🚌💨</div><h2>Out of space!</h2>
       <p>${G.rules ? 'No passengers can board and no bus can make a legal departure. Try a different order of moves.' : 'The carousel is full and nobody on it matches a bus in the bays.'}</p>
+      ${save.boosters.undo > 0 && G.history.length ? `<button class="btn blue" data-a="undo">Undo last move (${save.boosters.undo} left)</button>` : ''}
       ${anyBooster ? '<button class="btn blue" data-a="close">Keep going with a booster</button>' : ''}
       ${canExtra ? `<button class="btn gold" data-a="extra" ${save.coins < EXTRA_BAY_PRICE ? 'disabled' : ''}>Open an extra bay · ${EXTRA_BAY_PRICE} 🪙</button>` : ''}
       <button class="btn" data-a="restart">Try again</button>`,
@@ -2152,19 +2168,22 @@
           G.tempBays++; closeModal(); updateHUD();
         },
         restart: () => { closeModal(); startLevel(); },
+        undo: () => { $('#modal').hidden = true; modalOnClose = null; undoMove(); updateHUD(); },
       },
       () => { G.failDismissed = true; G.stuckT = 0; });
   }
 
   // A bomb bus ran out of moves. Defusing it gives a few more moves.
   function showBoom(b) {
-    if (G.won || b.state !== 'lot') { G.boom = null; return; }
+    if (G.won || G.boom !== b || b.state !== 'lot') { if (G.boom === b) G.boom = null; return; }
     b.shake = 0.6; sound('fail');
     showModal(`<div class="big">💥</div><h2>Boom!</h2>
       <p>A bomb bus ran out of moves before it got out of the lot.</p>
       <button class="btn gold" data-a="defuse" ${save.coins < DEFUSE_PRICE ? 'disabled' : ''}>Defuse it: 3 more moves · ${DEFUSE_PRICE} 🪙</button>
+      ${save.boosters.undo > 0 && G.history.length ? `<button class="btn blue" data-a="undo">Undo last move (${save.boosters.undo} left)</button>` : ''}
       <button class="btn" data-a="restart">Try again</button>`,
       {
+        undo: () => { $('#modal').hidden = true; undoMove(); updateHUD(); },
         defuse: () => {
           save.coins -= DEFUSE_PRICE; persist();
           b.bomb = 3; b.flash = 0.4; G.boom = null; closeModal(); updateHUD();
@@ -2173,6 +2192,7 @@
       });
   }
 
+  const price = (k) => (k === 'undo' ? UNDO_PRICE : BOOSTER_PRICE);
   function openShop() {
     if (G.modal) return;
     const render = () => {
@@ -2182,6 +2202,7 @@
         ['shuffle', '🔀', 'Shuffle', 'Mixes up the colors of parked buses'],
         ['sort', '👥', 'Sort', 'Moves passengers who fit your buses to the front'],
         ['vip', '⭐', 'VIP', 'Flies any bus to the VIP bay, even if it is blocked'],
+        ['undo', '↩️', 'Undo', 'Takes back your last tap, for when a finger slips'],
       ];
       return `<h2>Shop</h2><div class="coinline">🪙 ${save.coins}</div>
         <p style="margin:0 0 6px">Earn coins by finishing levels. No ads, ever. ♥</p>
@@ -2190,7 +2211,7 @@
         : `<div class="shop-row"><div class="ic">🅿️</div><div class="txt"><b>All bays unlocked</b>You have all ${MAX_BAYS} bays</div></div>`}
         ${items.map(([k, ic, name, desc]) => `<div class="shop-row"><div class="ic">${ic}</div>
           <div class="txt"><b>${name} (have ${save.boosters[k]})</b>${desc}</div>
-          <button data-a="buy" data-k="${k}" ${save.coins < BOOSTER_PRICE ? 'disabled' : ''}>${BOOSTER_PRICE} 🪙</button></div>`).join('')}
+          <button data-a="buy" data-k="${k}" ${save.coins < price(k) ? 'disabled' : ''}>${price(k)} 🪙</button></div>`).join('')}
         <button class="btn blue" data-a="close">Done</button>`;
     };
     const actions = {
@@ -2201,8 +2222,9 @@
         $('#card').innerHTML = render(); updateHUD();
       },
       buy: (btn) => {
-        if (save.coins < BOOSTER_PRICE) return;
-        save.coins -= BOOSTER_PRICE; save.boosters[btn.dataset.k]++; persist(); sound('pop');
+        const k = btn.dataset.k;
+        if (save.coins < price(k)) return;
+        save.coins -= price(k); save.boosters[k]++; persist(); sound('pop');
         $('#card').innerHTML = render(); updateHUD();
       },
     };
