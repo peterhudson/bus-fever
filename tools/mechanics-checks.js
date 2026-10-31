@@ -112,6 +112,29 @@ function legacy(B) {
   assert.ok(parked, 'The RV squats in a bay when its counter runs out');
   console.log('New chapters: luggage, fog, chameleons, turntables, tow trucks and the RV behave as described');
 }
+// The Guru: after bad random moves on level 60, a binary search over the
+// move history finds a position from which the search can still win
+{
+  let G = start(60), seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, history = [];
+  for (let step = 0; step < 300000 && !G.won && !G.validationFailed && !G.boom; step++) {
+    B.update(0.04); G = B.G;
+    if (G.buses.some(b => ['exiting', 'driving', 'flying', 'transferring'].includes(b.state)) || step % 25) continue;
+    const options = B.lotBuses().filter(b => B.canDispatch(b));
+    if (!options.length) continue;
+    const b = options[Math.floor(rnd() * options.length)];
+    const saved = G.history; G.history = []; const before = structuredClone(G); G.history = saved;
+    if (B.tryDispatch(b, false)) history.push(before);
+  }
+  assert.ok(!G.won && history.length > 1, 'Random play loses level 60');
+  const solve = (state, budget = 300) => { const search = B.winnableFrom(state, budget); let r; while ((r = search.step(1000)) === null); return r; };
+  assert.equal(solve(history[0]), true, 'The Guru can win from the start of the level');
+  let lo = 0, hi = history.length - 1;
+  while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (solve(history[mid])) lo = mid; else hi = mid - 1; }
+  assert.ok(lo > 0, 'The Guru keeps some of the moves that still allow a win');
+  assert.equal(B.G, G, 'Searching leaves the real game untouched');
+  console.log(`Guru: rewound ${history.length - lo} of ${history.length} moves to a winnable position`);
+}
 const end = Number(process.argv[2] || 270), first = Number(process.argv[3] || 1), failed = []; let maximumMs = 0;
 for (let n = first; n <= end; n++) {
   const t = performance.now(); G = start(n); maximumMs = Math.max(maximumMs, performance.now() - t);

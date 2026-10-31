@@ -10,7 +10,7 @@ module.exports = function loadGame(width = 390, height = 764) {
     });
     return elements.get(selector);
   }
-  const sandbox = { console, performance, Math, setTimeout: () => 0, clearTimeout() {}, requestAnimationFrame() {},
+  const sandbox = { console, performance, Math, structuredClone, setTimeout: () => 0, clearTimeout() {}, requestAnimationFrame() {},
     localStorage: { getItem: () => JSON.stringify({ level: 1, seenHowTo: true, sound: false }), setItem() {} },
     document: { querySelector: element, querySelectorAll: () => [], createElement: element, addEventListener() {}, hidden: false },
   };

@@ -8,6 +8,8 @@
   const MAX_BAYS = 7;
   const BAY_PRICES = { 5: 100, 6: 300, 7: 600 };
   const BOOSTER_PRICE = 50, UNDO_PRICE = 15;
+  const GURU_AFTER = 3;              // failed attempts at a level before the Guru can help
+  const GURU_BUDGET = 300;           // positions the Guru tries from each point before giving up on it
   const EXTRA_BAY_PRICE = 100;
   const DEFUSE_PRICE = 100;
   const BUMP_DUR = 0.35, FLY_DUR = 0.4, LEAVE_DUR = 0.7, BOARD_GAP = 0.018;
@@ -730,7 +732,9 @@
       rules: L.rules ? { ...L.rules, caravan: L.rules.caravan ? { ...L.rules.caravan, bounds:{...L.rules.caravan.bounds} } : undefined } : undefined, solution: L.solution, switched: false,
       paradeMoves:0, paradeFrom:0, paradeT:0, linkFocus:null, linkFocusT:0, chuteSlide:[0,0],
       fog: L.rules?.fog ? { ...L.rules.fog, lifted: false, fade: 1 } : null,
-      history: [],    // the game as it was before each tap that moved a bus, for Undo
+      history: [],    // the game as it was before each tap that moved a bus, for Undo and the Guru
+      freeUndo: 1,    // every attempt gets one undo that costs nothing
+      failCounted: false,
       rv: L.rules?.rv ? { mode: 'road', count: L.rules.rv.first, stay: 0, slot: -1, seen: 0, d: 0, t: 1 } : null,
       validating, planning, recordedFeeds: [[], []], validationFailed: false,
     };
@@ -1022,7 +1026,7 @@
     const history = G.history; G.history = [];
     const before = structuredClone(G);
     G.history = history;
-    if (tryDispatch(b, true)) { history.push(before); if (history.length > 30) history.shift(); }
+    if (tryDispatch(b, true)) { history.push(before); if (history.length > 300) history.shift(); }
   });
 
   function tryDispatch(b, notify = true) {
@@ -1991,7 +1995,9 @@
       const cnt = el.querySelector('.cnt');
       cnt.textContent = n;
       el.setAttribute('aria-label', `${k === 'vip' ? 'VIP' : k === 'sort' ? 'Sort' : k === 'undo' ? 'Undo' : 'Shuffle'}, ${n} available${k === 'vip' && G.vipMode ? ', selected' : ''}`);
-      cnt.classList.toggle('zero', n <= 0);
+      const free = k === 'undo' && G && G.freeUndo > 0;
+      if (k === 'undo') el.querySelector('small').textContent = free ? 'One free undo this try' : 'Take back your last tap';
+      cnt.classList.toggle('zero', n <= 0 && !free);
       el.classList.toggle('active', k === 'vip' && G && G.vipMode);
     });
     $('#btnBoosters').classList.toggle('active', !!(G && G.vipMode));
@@ -2008,15 +2014,118 @@
     if (msg) toastTimer = setTimeout(() => el.classList.remove('show'), ms);
   }
 
-  // Undo puts the game back as it was before the last tap that moved a bus
+  // Undo puts the game back as it was before the last tap that moved a bus.
+  // The attempt's free undo goes first, then the Undo booster.
   function undoMove() {
-    const before = G.history.pop();
-    if (!before) { toast('Nothing to undo yet'); return false; }
-    before.history = G.history;
-    G = before; G.modal = false; G.failDismissed = false; G.stuckT = 0;
-    spendBooster('undo'); sound('magic'); toast('Undone');
+    if (!G.history.length) { toast('Nothing to undo yet'); return false; }
+    const free = G.freeUndo > 0;
+    if (!free && save.boosters.undo <= 0) { openShop(); return false; }
+    rewindTo(G.history.length - 1);
+    if (free) G.freeUndo = 0; else spendBooster('undo');
+    sound('magic'); toast(free ? 'Undone (free undo used)' : 'Undone');
+    updateHUD();
     return true;
   }
+  // Go back to history[i], keeping the earlier history and what this attempt
+  // has used up
+  function rewindTo(i) {
+    const history = G.history, freeUndo = G.freeUndo, failCounted = G.failCounted, before = history[i];
+    before.history = history.slice(0, i); before.freeUndo = freeUndo; before.failCounted = failCounted;
+    G = before; G.modal = false; G.failDismissed = false; G.stuckT = 0; G.boom = null;
+  }
+  const canUndo = () => G.history.length > 0 && (G.freeUndo > 0 || save.boosters.undo > 0);
+  const undoLabel = () => G.freeUndo > 0 ? 'Undo last move (free)' : `Undo last move (${save.boosters.undo} left)`;
+
+  // A failed try counts once towards unlocking the Guru for this level
+  function countFailure() {
+    if (G.failCounted || G.validating) return;
+    G.failCounted = true;
+    const tries = (save.attempts = save.attempts || {});
+    tries[save.level] = (tries[save.level] || 0) + 1;
+    persist();
+  }
+  const guruReady = () => (save.attempts?.[save.level] || 0) >= GURU_AFTER && G.history.length > 0;
+
+  // The Guru rewinds to the latest moment the level could still be won. It
+  // searches each earlier position in turn (newest first) for a way through,
+  // on copies of the game, in small slices so the screen stays responsive.
+  function winnableFrom(start, budget) {
+    const real = G, seen = new Set();
+    const key = () => G.buses.map((b) => b.state === 'lot' ? 'L' : b.state === 'slot' ? `S${b.slot}:${b.filled}` : 'x').join('') + '|' + G.ring.join(',') + '|' + G.queue.length + '|' + G.arrivals;
+    const settle = () => {
+      for (let i = 0; i < 6000; i++) {
+        update(0.04);
+        if (G.won) return 'won';
+        if (G.boom || G.validationFailed) return 'dead';
+        if (!movingBuses() && settled() && !G.buses.some((b) => b.state === 'leaving')) return 'ok';
+      }
+      return 'dead';
+    };
+    const stack = [];
+    let nodes = 0;
+    const push = (state) => {
+      G = state; G.validating = true; G.modal = false; G.history = [];
+      const r = settle();
+      if (r === 'won') return true;
+      if (r === 'dead') return false;
+      const k = key();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      // try buses in the generator's winning order first
+      const options = lotBuses().filter((b) => canDispatch(b)).sort((a, c) => c.seq - a.seq);
+      if (!options.length) return false;
+      stack.push({ state: G, options: options.map((b) => b.id) });
+      return false;
+    };
+    return {
+      // returns true (winnable), false (not), or null (still searching)
+      step(ms) {
+        const until = performance.now() + ms;
+        try {
+          if (nodes === 0) { nodes++; if (push(structuredClone(start))) return true; }
+          while (stack.length && performance.now() < until) {
+            if (nodes++ > budget) return false;
+            const top = stack[stack.length - 1], id = top.options.pop();
+            if (top.options.length === 0) stack.pop();
+            G = structuredClone(top.state);
+            const b = G.buses.find((o) => o.id === id);
+            if (!tryDispatch(b, false)) continue;
+            if (push(G)) return true;
+          }
+          return stack.length ? null : false;
+        } finally { G = real; }
+      },
+    };
+  }
+  // A position that can be won stays winnable at every earlier position (you
+  // could replay the same moves), so a binary search over the history finds
+  // the latest winnable one with few searches. The start always counts.
+  function useGuru() {
+    const history = G.history.slice();
+    G.modal = true;
+    $('#card').innerHTML = '<div class="big">🧘</div><h2>The Guru is thinking…</h2><p id="guruNote">Looking back over your moves.</p>';
+    $('#modal').hidden = false;
+    let lo = 0, hi = history.length - 1, mid = 0, search = null;
+    const next = () => {
+      if (lo >= hi) {
+        const back = history.length - lo;
+        $('#modal').hidden = true;
+        rewindTo(lo); updateHUD(); sound('magic');
+        toast(lo ? `🧘 The Guru took back ${back} move${back === 1 ? '' : 's'}. You can still win from here.` : '🧘 The Guru went back to the start.', 3200);
+        return;
+      }
+      mid = Math.ceil((lo + hi) / 2); search = winnableFrom(history[mid], GURU_BUDGET);
+      setTimeout(tick, 0);
+    };
+    const tick = () => {
+      const r = search.step(40);
+      if (r === null) { setTimeout(tick, 0); return; }
+      if (r) lo = mid; else hi = mid - 1;
+      next();
+    };
+    setTimeout(next, 30);
+  }
+
 
   function spendBooster(k) {
     save.boosters[k] = Math.max(0, save.boosters[k] - 1);
@@ -2026,6 +2135,7 @@
   function onBooster(k) {
     unlockAudio();
     if (G.modal || G.won) return;
+    if (k === 'undo') { G.failDismissed = false; undoMove(); return; }
     if (save.boosters[k] <= 0) { openShop(); return; }
     G.failDismissed = false;
     if (k === 'vip') {
@@ -2035,7 +2145,6 @@
       updateHUD();
       return;
     }
-    if (k === 'undo') { undoMove(); return; }
     if (k === 'shuffle') {
       const lot = lotBuses();
       const groups = {};
@@ -2106,7 +2215,7 @@
     if (G.modal) return;
     showModal(`<h2>Restart?</h2><p>Start level ${save.level} over from the beginning.</p>
       <button class="btn" data-a="restart">Restart</button><button class="btn gray" data-a="close">Cancel</button>`,
-      { restart: () => { closeModal(); startLevel(); } });
+      { restart: () => { if (G.history.length) countFailure(); closeModal(); startLevel(); } });
   });
   $('#btnMenu').addEventListener('click', () => { unlockAudio(); openMenu(); });
 
@@ -2141,6 +2250,7 @@
     const bonus = save.level % 5 === 0;
     save.coins += reward;
     if (bonus) for (const k in save.boosters) save.boosters[k]++;
+    if (save.attempts) delete save.attempts[save.level];
     save.level++;
     persist();
     sound('win');
@@ -2153,12 +2263,14 @@
 
   function showFail() {
     if (G.validating) { G.validationFailed = true; return; }
+    countFailure();
     const anyBooster = Object.values(save.boosters).some((n) => n > 0);
     const canExtra = bays() < MAX_BAYS;
     sound('fail');
     showModal(`<div class="big">🚌💨</div><h2>Out of space!</h2>
       <p>${G.rules ? 'No passengers can board and no bus can make a legal departure. Try a different order of moves.' : 'The carousel is full and nobody on it matches a bus in the bays.'}</p>
-      ${save.boosters.undo > 0 && G.history.length ? `<button class="btn blue" data-a="undo">Undo last move (${save.boosters.undo} left)</button>` : ''}
+      ${guruReady() ? '<button class="btn gold" data-a="guru">🧘 Ask the Guru</button>' : ''}
+      ${canUndo() ? `<button class="btn blue" data-a="undo">${undoLabel()}</button>` : ''}
       ${anyBooster ? '<button class="btn blue" data-a="close">Keep going with a booster</button>' : ''}
       ${canExtra ? `<button class="btn gold" data-a="extra" ${save.coins < EXTRA_BAY_PRICE ? 'disabled' : ''}>Open an extra bay · ${EXTRA_BAY_PRICE} 🪙</button>` : ''}
       <button class="btn" data-a="restart">Try again</button>`,
@@ -2169,6 +2281,7 @@
         },
         restart: () => { closeModal(); startLevel(); },
         undo: () => { $('#modal').hidden = true; modalOnClose = null; undoMove(); updateHUD(); },
+        guru: () => { modalOnClose = null; useGuru(); },
       },
       () => { G.failDismissed = true; G.stuckT = 0; });
   }
@@ -2176,13 +2289,15 @@
   // A bomb bus ran out of moves. Defusing it gives a few more moves.
   function showBoom(b) {
     if (G.won || G.boom !== b || b.state !== 'lot') { if (G.boom === b) G.boom = null; return; }
-    b.shake = 0.6; sound('fail');
+    b.shake = 0.6; sound('fail'); countFailure();
     showModal(`<div class="big">💥</div><h2>Boom!</h2>
       <p>A bomb bus ran out of moves before it got out of the lot.</p>
       <button class="btn gold" data-a="defuse" ${save.coins < DEFUSE_PRICE ? 'disabled' : ''}>Defuse it: 3 more moves · ${DEFUSE_PRICE} 🪙</button>
-      ${save.boosters.undo > 0 && G.history.length ? `<button class="btn blue" data-a="undo">Undo last move (${save.boosters.undo} left)</button>` : ''}
+      ${guruReady() ? '<button class="btn gold" data-a="guru">🧘 Ask the Guru</button>' : ''}
+      ${canUndo() ? `<button class="btn blue" data-a="undo">${undoLabel()}</button>` : ''}
       <button class="btn" data-a="restart">Try again</button>`,
       {
+        guru: () => { useGuru(); },
         undo: () => { $('#modal').hidden = true; undoMove(); updateHUD(); },
         defuse: () => {
           save.coins -= DEFUSE_PRICE; persist();
@@ -2320,5 +2435,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for testing
-  window.__bus = { genLevel, initLevel, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
+  window.__bus = { genLevel, initLevel, winnableFrom, rewindTo, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
 })();

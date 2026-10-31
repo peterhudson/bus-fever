@@ -66,7 +66,8 @@ Everything the original style of game sells is earned by playing instead:
 | --- | --- |
 | Extra bays (5th, 6th, 7th) | Bought with coins earned from levels (100 / 300 / 600) |
 | Shuffle, Sort, VIP boosters | 2 of each to start, +1 of each every 5 levels, or 50 coins each |
-| Undo booster | 3 to start, +1 every 5 levels, or 15 coins each. Takes back the last tap that moved a bus; also offered on the Out of space and Boom screens |
+| Undo | One free undo on every attempt (use it or lose it). After that, Undo boosters: 3 to start, +1 every 5 levels, or 15 coins each. Takes back the last tap that moved a bus; also offered on the Out of space and Boom screens |
+| The Guru 🧘 | Free, once a level has been failed 3 times (`GURU_AFTER`). From the Out of space or Boom screen, it rewinds to the latest move from which the level can still be won. Failed attempts are counted only in the browser's saved game, never sent anywhere |
 | "Continue" when stuck | Open an extra bay for that level for 100 coins, use a booster, or retry for free |
 | Lives / energy | None. Play as much as you like |
 
