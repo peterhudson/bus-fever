@@ -2370,30 +2370,42 @@
       how: () => { $('#card').innerHTML = howToHtml() + '<button class="btn" data-a="close">Got it</button>'; },
       playtest: () => { $('#card').innerHTML = playtestHtml(); },
       pick: (btn) => playtestLevel(Number(btn.dataset.level)),
+      go: () => playtestLevel(Number($('#ptLevel').value)),
       back: () => playtestLevel(save.realLevel, true),
     });
   }
   // Each chapter's tutorial, half-difficulty and first full level
+  // Where each new thing first shows up through level 100. Later rules come
+  // from the chapters, one every 10 levels from 101. tools/mechanics-checks.js
+  // confirms these against the generator.
+  const FIRST_LEVELS = [
+    [1, 'First level', null], [5, 'Big 40-seat buses, packed lots', null], [10, 'HARD levels (every 10th)', null],
+    [11, 'Mystery buses', 'mystery'], [12, 'Flip buses', 'flip'], [16, 'Tunnels', 'tunnel'],
+    [56, 'Ice', 'ice'], [58, 'Bombs', 'bomb'], [60, 'Locked buses', 'lock'], [64, 'Traffic cones', 'cone'], [70, 'Gates', 'gate'],
+  ];
+  const milestones = () => FIRST_LEVELS.concat(A.chapters.map(([key, name], i) => [101 + i * 10, name, key]));
   function playtestHtml() {
-    const rows = A.chapters.map(([key, name], i) => {
-      const n = 101 + i * 10;
-      return `<div class="pt-row"><span>${name}</span>${[n, n + 1, n + 2].map((l) => `<button class="pt-level" data-a="pick" data-level="${l}">${l}</button>`).join('')}</div>`;
-    }).join('');
-    return `<h2>Playtest levels</h2><p class="pt-note">Each new rule: its tutorial, the half-difficulty level, then full difficulty. Intros show again.</p>
+    const rows = milestones().map(([n, name]) =>
+      `<div class="pt-row"><span>${name}</span>${[n, n + 1, n + 2].map((l, i) => `<button class="pt-level${i ? '' : ' pt-first'}" data-a="pick" data-level="${l}">${l}</button>`).join('')}</div>`).join('');
+    return `<h2>Playtest levels</h2>
+      <div class="pt-go"><input id="ptLevel" type="number" inputmode="numeric" min="1" max="9999" placeholder="Any level" aria-label="Level number"><button class="btn blue" data-a="go">Go</button></div>
+      <p class="pt-note">Each row starts at the level where something new first appears (highlighted), then the next two. Intros show again.</p>
       <div class="pt-list">${rows}</div>
       ${save.realLevel ? `<button class="btn" data-a="back">Back to my level ${save.realLevel}</button>` : ''}
       <button class="btn gray" data-a="close">Close</button>`;
   }
   function playtestLevel(n, back = false) {
+    if (!(n >= 1)) return;
     if (back) delete save.realLevel;
     else {
       if (!save.realLevel) save.realLevel = save.level;
-      // show the chapter's intro again on its first level
-      const chapter = A.chapters[(n - 101) / 10];
-      if (chapter && save.seenPieces) delete save.seenPieces[chapter[0]];
+      // show the intro again on the level where it first appears
+      const first = milestones().find(([l]) => l === n);
+      if (first && first[2] && save.seenPieces) delete save.seenPieces[first[2]];
     }
-    save.level = n; persist(); closeModal(); startLevel();
+    save.level = Math.floor(n); persist(); closeModal(); startLevel();
   }
+
 
   // ---------- Sound ----------
   let AC = null;
@@ -2435,5 +2447,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for testing
-  window.__bus = { genLevel, initLevel, winnableFrom, rewindTo, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
+  window.__bus = { FIRST_LEVELS, genLevel, initLevel, winnableFrom, rewindTo, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
 })();
