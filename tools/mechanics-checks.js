@@ -135,6 +135,17 @@ function legacy(B) {
   assert.equal(B.G, G, 'Searching leaves the real game untouched');
   console.log(`Guru: rewound ${history.length - lo} of ${history.length} moves to a winnable position`);
 }
+// The playtest picker's early milestones match where each piece first appears
+{
+  const found = {}, has = {
+    'Big 40-seat buses, packed lots': G => G.buses.some(b => b.cap === 40), mystery: G => G.buses.some(b => b.mystery), flip: G => G.buses.some(b => b.flip),
+    tunnel: G => G.tunnels.some(t => !t.cone), ice: G => G.buses.some(b => b.ice), bomb: G => G.buses.some(b => b.bomb),
+    lock: G => G.buses.some(b => b.lock != null), cone: G => G.tunnels.some(t => t.cone && !t.gate), gate: G => G.tunnels.some(t => t.gate),
+  };
+  for (let n = 1; n <= 70; n++) { const G = start(n); for (const k in has) if (!(k in found) && has[k](G)) found[k] = n; }
+  for (const [n, name, key] of B.FIRST_LEVELS) if (has[key || name]) assert.equal(found[key || name], n, `${name} first appears at level ${n}`);
+  console.log('Playtest milestones match the first level each piece appears');
+}
 const end = Number(process.argv[2] || 270), first = Number(process.argv[3] || 1), failed = []; let maximumMs = 0;
 for (let n = first; n <= end; n++) {
   const t = performance.now(); G = start(n); maximumMs = Math.max(maximumMs, performance.now() - t);
