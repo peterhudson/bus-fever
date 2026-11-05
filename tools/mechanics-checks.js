@@ -95,6 +95,18 @@ function legacy(B) {
   assert.equal(chameleon.color, chameleon.cycle[0]);
   B.tryDispatch(G.buses.find(b => b.seq === G.solution[0].ids[0]), false);
   assert.equal(chameleon.color, chameleon.cycle[1 % chameleon.cycle.length], 'Chameleons change colour with each departure');
+  for (const n of [231, 232, 238]) {
+    G = start(n);
+    const groups = {};
+    for (const b of G.buses.filter(b => b.cycle)) (groups[b.chameleon] ||= []).push(b);
+    assert.ok(Object.keys(groups).length >= 1, `Level ${n} has a chameleon group`);
+    for (const g of Object.values(groups)) {
+      assert.ok(g.length >= 2 && g.length === g[0].cycle.length, 'A chameleon group has one bus per colour');
+      assert.ok(g.every(b => b.cap === g[0].cap && [...b.cycle].sort().join() === [...g[0].cycle].sort().join()), 'A group shares its size and colours');
+    }
+    assert.ok(B.runSolution(1 / 60).won, `Level ${n} is won by its plan`);
+    for (const g of Object.values(groups)) assert.equal(new Set(g.map(b => b.color)).size, g.length, 'Following the plan, a group leaves in different colours');
+  }
   G = start(241);
   const turning = G.buses.find(b => b.turntable), ang = turning.ang;
   B.tryDispatch(G.buses.find(b => b.seq === G.solution[0].ids[0]), false);

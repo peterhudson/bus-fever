@@ -1459,6 +1459,12 @@
         ctx.fillStyle = COLORS[b.cycle[i]].c; ctx.strokeStyle = i === cur ? '#fff' : 'rgba(15,23,42,0.5)'; ctx.lineWidth = i === cur ? 1.8 : 1;
         ctx.beginPath(); ctx.arc(cx, W / 2 - 4, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       }
+      // group tag, drawn upright: buses with the same tag share one busload
+      // of each colour between them
+      ctx.save(); ctx.rotate(-pose.ang);
+      ctx.fillStyle = '#15803d'; rr(-10, -W / 2 - 13, 20, 12, 4); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = '800 8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`🦎${b.chameleon}`, 0, -W / 2 - 6.5); ctx.restore();
     }
     if (b.windmill && mode === 'arrow') {
       // a little windmill on the back of the roof, sails turning
