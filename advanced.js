@@ -19,6 +19,7 @@
     ['chameleon', 'Chameleon buses', 'These buses change colour each time a bus leaves, cycling through the dots on their side (the ringed dot is the current colour). They keep the colour they have when they leave the lot.'],
     ['turntables', 'Turntables', 'A bus on a turntable turns a quarter turn clockwise each time another bus leaves the lot.'],
     ['towing', 'Tow trucks', 'A bus with a tow truck hitched to its front is pulled forward into any gap that opens ahead of it whenever a bus leaves the lot.'],
+    ['schrodinger', 'Schrödinger buses', 'Buses with the same ψ badge are entangled, and each could be any of the colours on its side. A bus picks its colour as it parks: the first of its colours due out of the chutes (the ringed dot). That colour is then gone from the others in its group, so between them they take one of each colour.'],
   ];
   // Rules that move buses or change which exit a bus uses don't mix with
   // rules that depend on exits, or with fog
@@ -342,17 +343,47 @@
         b.mystery = false;
       }
     }
+    // Four active buses at most (three when an RV can take a bay). A linked
+    // pair is never split across batches.
+    const batch = p.squatter ? 3 : 4, batches = [];
+    for (let offset = 0; offset < order.length;) {
+      let end = Math.min(order.length, offset + batch);
+      if (end < order.length && order[end - 1].link && order[end - 1].link === order[end].link) end--;
+      batches.push([offset, end]);
+      offset = end;
+    }
+    if (p.schrodinger) {
+      // An entangled group is two or three buses of one size and different
+      // colours from the same batch, so their passengers are mixed together in
+      // the line and any split of the colours between them works. Each bus
+      // keeps its planned colour in b.color for building the line; the game
+      // hides it and picks the real colour when the bus parks.
+      const free = b => !b.link && !b.transfer && !b.stages && !b.bomb && !b.cycle && !b.switchPad && !b.windmill && b.lock == null;
+      const want = p.teaching ? 1 : 2;
+      let groups = 0;
+      for (const [from, to] of shuffled(batches.filter(([from]) => from >= 1))) {
+        if (groups === want) break;
+        const size = p.teaching ? 2 : 2 + Math.floor(rng() * 2);
+        const members = order.slice(from, to).filter(free);
+        for (const cap of shuffled([...new Set(members.map(b => b.cap))])) {
+          const pick = [];
+          for (const b of shuffled(members.filter(b => b.cap === cap))) if (pick.length < size && !pick.some(o => o.color === b.color)) pick.push(b);
+          if (pick.length < 2) continue;
+          const colors = shuffled(pick.map(b => b.color)), id = ++groups;
+          for (const b of pick) { b.qgroup = id; b.qcolors = colors.slice(); b.mystery = false; }
+          break;
+        }
+      }
+      if (!groups) return null;
+    }
     if (p.squatter) {
       const r = k => Math.floor(rng() * k);
       rules.rv = p.teaching ? { first: 3, stay: 2, gap: 4 } : { first: 2 + r(3), stay: 2 + r(3), gap: 3 + r(4) };
     }
-    // Four active buses at most (three when an RV can take a bay). A linked
-    // pair is never split across batches. Some passengers carry a suitcase
+    // Passengers for each batch are mixed together. Some carry a suitcase
     // (BAG added to their color) and take two seats.
-    const queue = [], batch = p.squatter ? 3 : 4, BAG = 16;
-    for (let offset = 0; offset < order.length;) {
-      let end = Math.min(order.length, offset + batch);
-      if (end < order.length && order[end - 1].link && order[end - 1].link === order[end].link) end--;
+    const queue = [], BAG = 16;
+    for (const [offset, end] of batches) {
       const active = order.slice(offset, end).map(b => stages(b).map(s => ({ ...s })));
       let rowPosition = 0, previous = -1;
       while (active.some(s => s.length)) {
@@ -369,7 +400,6 @@
         previous = stage.color;
         if (!stage.count) active[chosen].shift();
       }
-      offset = end;
     }
     L.queue = queue; L.rules = rules; L.solution = plan;
     return L;
