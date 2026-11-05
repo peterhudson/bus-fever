@@ -16,7 +16,7 @@
     ['squatter', 'RV squatter', 'A tourist RV circles the road. When its counter reaches zero it parks in a free bay, or waits for the next bay to empty and takes it at once. It stays for the shown number of departures, then drives off and comes back later.'],
     ['fog', 'Fog and windmills', 'Fog hides part of the lot. Buses under it can’t leave until every windmill bus has left the lot and the wind blows the fog away.'],
     ['luggage', 'Luggage', 'Passengers towing a silver suitcase take two seats. A bus with one seat left can’t take them.'],
-    ['chameleon', 'Chameleon buses', 'These buses change colour each time a bus leaves, cycling through the dots on their side (the ringed dot is the current colour). They keep the colour they have when they leave the lot.'],
+    ['chameleon', 'Chameleon buses', 'Chameleons come in groups with the same tag. They change colour each time a bus leaves, cycling through the dots on their side (the ringed dot is the current colour), and keep the colour they have when they leave the lot. A group carries one busload of each of its colours, so send each bus in the group in a different colour.'],
     ['turntables', 'Turntables', 'A bus on a turntable turns a quarter turn clockwise each time another bus leaves the lot.'],
     ['towing', 'Tow trucks', 'A bus with a tow truck hitched to its front is pulled forward into any gap that opens ahead of it whenever a bus leaves the lot.'],
     ['schrodinger', 'Schrödinger buses', 'Buses with the same ψ badge are entangled, and each could be any of the colours on its side. A bus picks its colour as it parks: the first of its colours due out of the chutes (the ringed dot). That colour is then gone from the others in its group, so between them they take one of each colour.'],
@@ -329,28 +329,46 @@
       order.forEach(b => { if (inBand(pick.z, b)) b.inFog = true; });
       rules.fog = pick.z;
     }
-    if (p.chameleon) {
-      // A chameleon cycles through two or three colours, one step for every
-      // departure, and keeps the colour it has when it leaves
-      const picks = shuffled(order.map((_, i) => i).filter(i => i >= 1 && !order[i].link && !order[i].transfer && !order[i].stages && !order[i].bomb)).slice(0, p.teaching ? 1 : 3);
-      if (!picks.length) return null;
-      for (const i of picks) {
-        // b.color stays the colour it leaves with; cycle[t % k] is its colour
-        // after t departures
-        const b = order[i], k = p.teaching ? 2 : 2 + Math.floor(rng() * 2), at = moveAt(i) % k;
-        const others = shuffled(Array.from({ length: p.colors }, (_, c) => c).filter(c => c !== b.color)).slice(0, k - 1);
-        b.cycle = others.slice(0, at).concat([b.color], others.slice(at));
-        b.mystery = false;
-      }
-    }
     // Four active buses at most (three when an RV can take a bay). A linked
     // pair is never split across batches.
     const batch = p.squatter ? 3 : 4, batches = [];
     for (let offset = 0; offset < order.length;) {
       let end = Math.min(order.length, offset + batch);
       if (end < order.length && order[end - 1].link && order[end - 1].link === order[end].link) end--;
-      batches.push([offset, end]);
-      offset = end;
+      batches.push([offset, end]); offset = end;
+    }
+    if (p.chameleon) {
+      // Chameleons come in groups of two or three buses of the same size that
+      // cycle through the same colours, one step for every departure. Between
+      // them the group carries one busload of each colour, so every bus in the
+      // group must leave in a different colour. A group sits in one batch, so
+      // its passengers are mixed together and any split of the colours works.
+      // b.color is the colour the plan sends it in; cycle[t % k] is its
+      // colour after t departures.
+      const free = i => i >= 1 && !order[i].link && !order[i].transfer && !order[i].stages && !order[i].bomb && !order[i].cycle;
+      const wanted = p.teaching ? 1 : 2;
+      let groups = 0;
+      for (const [from, to] of shuffled(batches.slice())) {
+        if (groups === wanted) break;
+        const k = p.teaching ? 2 : 2 + Math.floor(rng() * 2);
+        const pool = shuffled(Array.from({ length: to - from }, (_, j) => from + j).filter(free));
+        let members = null;
+        for (const i of pool) {
+          const pick = [i];
+          for (const j of pool) if (j !== i && order[j].cap === order[i].cap && !pick.some(m => order[m].color === order[j].color)) pick.push(j);
+          if (pick.length >= k) { members = pick.slice(0, k); break; }
+          if (!members && pick.length >= 2) members = pick.slice(0, 2);
+        }
+        if (!members) continue;
+        groups++;
+        const colors = shuffled(members.map(i => order[i].color));
+        for (const i of members) {
+          const b = order[i], n = colors.length, shift = (colors.indexOf(b.color) - moveAt(i) % n + n) % n;
+          b.cycle = colors.map((_, t) => colors[(t + shift) % n]);
+          b.chameleon = groups; b.mystery = false;
+        }
+      }
+      if (!groups) return null;
     }
     if (p.schrodinger) {
       // An entangled group is two or three buses of one size and different
@@ -380,8 +398,8 @@
       const r = k => Math.floor(rng() * k);
       rules.rv = p.teaching ? { first: 3, stay: 2, gap: 4 } : { first: 2 + r(3), stay: 2 + r(3), gap: 3 + r(4) };
     }
-    // Passengers for each batch are mixed together. Some carry a suitcase
-    // (BAG added to their color) and take two seats.
+    // Some passengers carry a suitcase (BAG added to their color) and take
+    // two seats.
     const queue = [], BAG = 16;
     for (const [offset, end] of batches) {
       const active = order.slice(offset, end).map(b => stages(b).map(s => ({ ...s })));
