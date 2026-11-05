@@ -122,7 +122,20 @@ function legacy(B) {
   let parked = false;
   for (let i = 0; i < 120000 && !G.won && !parked; i++) { B.update(1 / 60); parked = G.slots.some(s => s && s.rv); if (!G.buses.some(b => ['exiting', 'driving', 'flying'].includes(b.state))) { const a = G.solution.find(a => G.buses.find(o => o.seq === a.ids[0]).state === 'lot'); if (a) B.tryDispatch(G.buses.find(o => o.seq === a.ids[0]), false); } }
   assert.ok(parked, 'The RV squats in a bay when its counter runs out');
-  console.log('New chapters: luggage, fog, chameleons, turntables, tow trucks and the RV behave as described');
+  G = start(261);
+  const entangled = G.buses.filter(b => b.qgroup);
+  assert.ok(entangled.length >= 2 && entangled.every(b => b.superposed && b.qcolors.length === entangled.length), 'Schrödinger buses come in entangled groups, one colour each');
+  for (let i = 0, index = 0; i < 120000; i++) {
+    B.update(1 / 60);
+    const b = G.buses.find(o => o.seq === G.solution[index].ids[0]);
+    if (!B.canDispatch(b)) continue;
+    const expected = b.qgroup && B.quantumColor(b);
+    assert.ok(B.tryDispatch(b, false)); index++;
+    if (b.qgroup) { assert.equal(b.color, expected, 'A Schrödinger bus takes the first of its colours due out of the chutes'); break; }
+  }
+  const first = entangled.find(b => !b.superposed), rest = entangled.filter(b => b.superposed);
+  assert.ok(rest.every(b => !B.openColors(b).includes(first.color)), 'Its colour is then gone from the rest of its group');
+  console.log('New chapters: luggage, fog, chameleons, turntables, tow trucks, the RV and Schrödinger buses behave as described');
 }
 // The Guru: after bad random moves on level 60, a binary search over the
 // move history finds a position from which the search can still win

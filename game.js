@@ -35,6 +35,8 @@
   const BAG = 16, colorOf = (p) => p & 15, seatsOf = (p) => (p >= BAG ? 2 : 1);
   const COLOR_NAMES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan', 'brown', 'white'];
   const MYSTERY = { c: '#64748b', d: '#334155', l: '#94a3b8' };
+  // Undecided Schrödinger buses are pale violet, with their options as dots
+  const QUANTUM = { c: '#ddd6fe', d: '#6d28d9', l: '#f5f3ff' };
   const A = window.Advanced;
   const $ = (s) => document.querySelector(s);
   const canvas = $('#game');
@@ -807,7 +809,18 @@
   }
   function makeBus(b, id) {
     return { ...b, id, state: 'lot', filled: 0, pending: 0, slot: -1, t: 0, ex: 0, bumpT: 0, bumpD: 0, shake: 0, flash: 0, flipT: 0, emergeT: 0, turnT: 0, towT: 0, towD: 0,
-      color: b.cycle ? b.cycle[0] : b.color };
+      color: b.cycle ? b.cycle[0] : b.color, superposed: !!b.qgroup };
+  }
+  // A Schrödinger bus could still be any colour its entangled group hasn't
+  // used. It becomes the first of those due out of the chutes (the active
+  // chute first), or the first of its dots if none of them are queued.
+  function openColors(b) {
+    return b.qcolors.filter(c => !G.buses.some(o => o.qgroup === b.qgroup && !o.superposed && o.color === c));
+  }
+  function quantumColor(b) {
+    const open = openColors(b), lines = [G.queue.slice(0, G.leftN), G.queue.slice(G.leftN)];
+    const side = activeFeed(), next = lines[side].concat(lines[1 - side]).find(p => open.includes(colorOf(p)));
+    return next === undefined ? open[0] : colorOf(next);
   }
 
   // Obstacles in the lot: parked buses and tunnels
@@ -1082,6 +1095,7 @@
   }
 
   function sendToSlot(b, slot, direct, defer = false) {
+    if (b.superposed) { b.color = quantumColor(b); b.superposed = false; }
     G.slots[slot] = b;
     b.slot = slot;
     b.arrive = ++G.arrivals;
@@ -1165,11 +1179,11 @@
         case 'driving':
           b.v = Math.min(900, b.v + 1400 * dt);
           b.dist += b.v * dt;
-          if (b.dist >= b.route[b.route.length - 1].d) { b.state = 'slot'; b.t = 0; }
+          if (b.dist >= b.route[b.route.length - 1].d) { b.state = 'slot'; b.t = 0; if (b.qgroup) b.flash = 0.4; }
           break;
         case 'flying':
           b.t += dt / FLY_DUR;
-          if (b.t >= 1) { b.state = 'slot'; b.t = 0; }
+          if (b.t >= 1) { b.state = 'slot'; b.t = 0; if (b.qgroup) b.flash = 0.4; }
           break;
         case 'transferring':
           b.t += dt / 0.8;
@@ -1333,7 +1347,9 @@
   }
 
   function drawBus(b, pose, mode) {
-    const col = b.mystery && mode === 'arrow' ? MYSTERY : COLORS[A.loading(b).color], L = b.len, W = b.wid;
+    // A Schrödinger bus stays undecided until it has parked in its bay
+    const quantum = b.qgroup && (b.superposed || ['exiting', 'driving', 'flying'].includes(b.state));
+    const col = quantum ? QUANTUM : b.mystery && mode === 'arrow' ? MYSTERY : COLORS[A.loading(b).color], L = b.len, W = b.wid;
     ctx.save();
     if (pose.alpha !== undefined) ctx.globalAlpha = Math.max(0, pose.alpha);
     ctx.translate(pose.x, pose.y);
@@ -1450,6 +1466,22 @@
       rr(-10, W / 2 + 1, 20, 12, 4); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.font = '800 8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(b.link ? `↔${b.link}` : 'T ↗', 0, W / 2 + 7); ctx.restore();
+    }
+    if (quantum) {
+      // the colours it could still be, the one it would take now ringed,
+      // and its group's ψ badge
+      const open = b.superposed ? openColors(b) : [b.color], now = b.superposed ? quantumColor(b) : b.color;
+      open.forEach((c, i) => {
+        const cx = -L / 2 + 8 + i * 8.5;
+        ctx.fillStyle = COLORS[c].c; ctx.strokeStyle = c === now ? '#fff' : 'rgba(15,23,42,0.5)'; ctx.lineWidth = c === now ? 1.8 : 1;
+        ctx.beginPath(); ctx.arc(cx, W / 2 - 4, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      });
+      if (mode === 'arrow') {
+        ctx.save(); ctx.rotate(-pose.ang); ctx.fillStyle = '#7c3aed';
+        rr(-10, -W / 2 - 13, 20, 12, 4); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.font = '800 8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(`ψ${b.qgroup}`, 0, -W / 2 - 7); ctx.restore();
+      }
     }
     if (b.cycle && mode === 'arrow') {
       // the colours it cycles through, the current one ringed
@@ -2152,7 +2184,7 @@
       return;
     }
     if (k === 'shuffle') {
-      const lot = lotBuses();
+      const lot = lotBuses().filter(b => !b.qgroup);   // entangled buses have no colour yet
       const groups = {};
       lot.forEach((b) => (groups[b.cap] = groups[b.cap] || []).push(b));
       let changed = false;
@@ -2453,5 +2485,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for testing
-  window.__bus = { FIRST_LEVELS, genLevel, initLevel, winnableFrom, rewindTo, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
+  window.__bus = { FIRST_LEVELS, genLevel, quantumColor, openColors, initLevel, winnableFrom, rewindTo, update, lotPose, pathHit, lotBuses, obstacles, freeSlot, levelFeatures, startLevel, tryDispatch, canDispatch, runSolution, activeFeed, chuteGateState, chuteGateGeometry, paradeIndicator, feedEntry, chutePoint, ringPoint, seatPoint, draw, get G() { return G; }, get save() { return save; }, get sceneryTime() { return sceneryClock; }, get geometry() { return { cw, ch, ringR, ringYT, ringYB, ringXL, ringXR, ringLen, crowdH, slotTop, ls, lotX, lotY, road }; } };
 })();

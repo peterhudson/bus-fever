@@ -19,6 +19,7 @@
     ['chameleon', 'Chameleon buses', 'Chameleons come in groups with the same tag. They change colour each time a bus leaves, cycling through the dots on their side (the ringed dot is the current colour), and keep the colour they have when they leave the lot. A group carries one busload of each of its colours, so send each bus in the group in a different colour.'],
     ['turntables', 'Turntables', 'A bus on a turntable turns a quarter turn clockwise each time another bus leaves the lot.'],
     ['towing', 'Tow trucks', 'A bus with a tow truck hitched to its front is pulled forward into any gap that opens ahead of it whenever a bus leaves the lot.'],
+    ['schrodinger', 'Schrödinger buses', 'Buses with the same ψ badge are entangled, and each could be any of the colours on its side. A bus picks its colour as it parks: the first of its colours due out of the chutes (the ringed dot). That colour is then gone from the others in its group, so between them they take one of each colour.'],
   ];
   // Rules that move buses or change which exit a bus uses don't mix with
   // rules that depend on exits, or with fog
@@ -365,6 +366,30 @@
           const b = order[i], n = colors.length, shift = (colors.indexOf(b.color) - moveAt(i) % n + n) % n;
           b.cycle = colors.map((_, t) => colors[(t + shift) % n]);
           b.chameleon = groups; b.mystery = false;
+        }
+      }
+      if (!groups) return null;
+    }
+    if (p.schrodinger) {
+      // An entangled group is two or three buses of one size and different
+      // colours from the same batch, so their passengers are mixed together in
+      // the line and any split of the colours between them works. Each bus
+      // keeps its planned colour in b.color for building the line; the game
+      // hides it and picks the real colour when the bus parks.
+      const free = b => !b.link && !b.transfer && !b.stages && !b.bomb && !b.cycle && !b.switchPad && !b.windmill && b.lock == null;
+      const want = p.teaching ? 1 : 2;
+      let groups = 0;
+      for (const [from, to] of shuffled(batches.filter(([from]) => from >= 1))) {
+        if (groups === want) break;
+        const size = p.teaching ? 2 : 2 + Math.floor(rng() * 2);
+        const members = order.slice(from, to).filter(free);
+        for (const cap of shuffled([...new Set(members.map(b => b.cap))])) {
+          const pick = [];
+          for (const b of shuffled(members.filter(b => b.cap === cap))) if (pick.length < size && !pick.some(o => o.color === b.color)) pick.push(b);
+          if (pick.length < 2) continue;
+          const colors = shuffled(pick.map(b => b.color)), id = ++groups;
+          for (const b of pick) { b.qgroup = id; b.qcolors = colors.slice(); b.mystery = false; }
+          break;
         }
       }
       if (!groups) return null;
